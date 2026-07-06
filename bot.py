@@ -50,8 +50,9 @@ except ImportError:
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup,
     ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,
-    ParseMode, ChatMember
+    ChatMember
 )
+from telegram.constants import ParseMode
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ConversationHandler,
@@ -103,7 +104,7 @@ logger = logging.getLogger("MegaBot")
 logger.setLevel(logging.INFO)
 
 # ---------- Configuration ----------
-BOT_TOKEN = "8693119356:AAHx4OVS1BzhcpEjsDqRdwEnOn1V2QwTNCk"          # <-- REPLACE WITH YOUR BOT TOKEN
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"          # <-- REPLACE WITH YOUR BOT TOKEN
 ADMIN_IDS = [5888777479]                   # <-- REPLACE WITH ADMIN TELEGRAM IDs
 
 # Module-specific settings
@@ -519,7 +520,6 @@ async def reg_register_one(session, email, password, referral, proxy=None):
     return False, email, "Max retries"
 
 async def reg_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ✅ FIX: Global declarations must be at the top of the function
     global REG_CONCURRENCY, REG_DELAY, REG_TURBO
     query = update.callback_query
     data = query.data
