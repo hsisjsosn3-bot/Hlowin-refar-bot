@@ -3,11 +3,12 @@
 
 """
 ╔══════════════════════════════════════════════════════════════════════════╗
-║   ULTIMATE MEGA BOT – v13.6 – 1040+ FEATURES – PREMIUM EDITION        ║
+║   ULTIMATE MEGA BOT – v13.7 – 1040+ FEATURES – PREMIUM EDITION        ║
 ║   ⚡ 1000x Speed  🔥 Enterprise‑Grade  🛡️ Military‑Grade Security      ║
 ║   👑 Developer: DK Sharma  |  📌 Admin: @OfficalEarningZone            ║
 ║   🔐 Per‑User Report Login with own API ID/HASH                       ║
 ║   🎯 40+ New Utility/Fun Commands Added                               ║
+║   ✅ Fixed event loop – uses run_polling() correctly                  ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 """
 
@@ -136,10 +137,6 @@ UNBAN_RATE_LIMIT_CALLS = 20
 REPORT_DB_PATH = "report_data.db"
 REPORT_DEFAULT_MAX = 20000
 REPORT_MAX_TARGETS = 10
-
-# Telethon credentials are no longer global; each user provides their own
-# But we keep these as fallback if needed, but we'll not use them.
-# API_ID and API_HASH are removed from global config.
 
 # ---------- Global Application Reference ----------
 APPLICATION = None
@@ -323,7 +320,6 @@ async def init_all_dbs():
                 used_at INTEGER DEFAULT 0
             )
         ''')
-        # Add api_id and api_hash columns to report_sessions
         await db.execute('''
             CREATE TABLE IF NOT EXISTS report_sessions (
                 user_id INTEGER PRIMARY KEY,
@@ -333,8 +329,7 @@ async def init_all_dbs():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        # For existing tables, add columns if not exist (sqlite doesn't support IF NOT EXISTS for columns easily, we'll alter)
-        # We'll just ensure the table has these columns by checking and altering if needed.
+        # Ensure columns exist (for existing tables)
         cur = await db.execute("PRAGMA table_info(report_sessions)")
         columns = [row[1] for row in await cur.fetchall()]
         if 'api_id' not in columns:
@@ -1737,8 +1732,8 @@ async def backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Simulate backup
     await update.message.reply_text("💾 Backup completed (simulated).")
 
-# ========== MAIN ==========
-async def main():
+# ========== SETUP FUNCTION (async) ==========
+async def setup():
     global APPLICATION, REG_PROXY_MANAGER, UNBAN_AUTO_ENGINE
 
     # 1. Initialise databases
@@ -1747,7 +1742,7 @@ async def main():
     # 2. Init proxy manager (lazy lock, safe)
     REG_PROXY_MANAGER = RegProxyManager()
 
-    # 3. Init unban auto engine
+    # 3. Init unban auto engine (sync init)
     class SimpleAutoEngine:
         def __init__(self):
             self.tasks = {}
@@ -1803,111 +1798,11 @@ async def main():
     # 7. Callback query handler
     application.add_handler(CallbackQueryHandler(global_callback_handler, pattern="^"))
 
-    # 8. Start polling (async)
-    await application.run_polling()
+    return application
 
-async def handle_global_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Check if user is in report login flow
-    if context.user_data.get("report_login_state") in ["api_id", "api_hash", "phone", "otp"]:
-        if context.user_data.get("report_login_state") == "api_id":
-            await report_login_api_id(update, context)
-        elif context.user_data.get("report_login_state") == "api_hash":
-            await report_login_api_hash(update, context)
-        elif context.user_data.get("report_login_state") == "phone":
-            await report_login_phone(update, context)
-        elif context.user_data.get("report_login_state") == "otp":
-            await report_login_otp(update, context)
-        return
-
-    # Route to other modules
-    if context.user_data.get("reg_waiting"):
-        await reg_handle_text(update, context)
-    elif context.user_data.get("ref_waiting"):
-        await ref_handle_text(update, context)
-    elif context.user_data.get("unban_waiting"):
-        await unban_handle_text(update, context)
-    elif context.user_data.get("bancheck_waiting"):
-        await bancheck_handle_text(update, context)
-    elif context.user_data.get("report_waiting"):
-        await report_handle_text(update, context)
-    elif context.user_data.get("fun_waiting"):
-        await fun_handle_text(update, context)
-    else:
-        text = update.message.text
-        if text == "📋 Registration Bot":
-            await registration_menu(update, context)
-        elif text == "📈 Referral Bot":
-            await referral_menu(update, context)
-        elif text == "🛡️ Unban Bot":
-            await unban_menu(update, context)
-        elif text == "🔍 Ban Check Bot":
-            await bancheck_menu(update, context)
-        elif text == "🚨 Report Bot":
-            await report_menu(update, context)
-        elif text == "🎮 Fun & Utilities":
-            await fun_menu(update, context)
-        elif text == "⚙️ Global Settings":
-            await global_settings(update, context)
-        elif text == "❓ Help":
-            await help_command(update, context)
-        else:
-            await update.message.reply_text("Use the buttons to navigate.")
-
-async def global_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    data = update.callback_query.data
-    if data.startswith("reg_"):
-        await reg_callback(update, context)
-    elif data.startswith("ref_"):
-        if data == "ref_holwin" or data == "ref_rex":
-            await ref_platform_select(update, context)
-        elif data == "ref_stats":
-            await ref_stats(update, context)
-        elif data == "ref_confirm" or data == "ref_cancel":
-            await ref_confirm(update, context)
-        elif data == "ref_back":
-            await ref_back(update, context)
-    elif data.startswith("unban_"):
-        await unban_callback(update, context)
-    elif data.startswith("bancheck_"):
-        await bancheck_menu(update, context)
-    elif data.startswith("report_"):
-        if data == "report_login":
-            await report_login_start(update, context)
-        elif data == "report_logout":
-            await report_logout(update, context)
-        elif data == "report_targets":
-            await report_targets(update, context)
-        elif data == "report_limit":
-            await report_limit(update, context)
-        elif data == "report_speed":
-            await report_speed(update, context)
-        elif data == "report_start":
-            await report_start(update, context)
-        elif data == "report_pause":
-            await report_pause(update, context)
-        elif data == "report_stop":
-            await report_stop(update, context)
-        elif data == "report_status":
-            await report_status(update, context)
-        elif data.startswith("report_speed_"):
-            speed = data.split("_")[2]
-            user_id = update.effective_user.id
-            session = REPORT_SESSIONS.get(user_id, {})
-            session["speed"] = speed
-            REPORT_SESSIONS[user_id] = session
-            await update.callback_query.edit_message_text(f"✅ Speed set to {speed}")
-    elif data.startswith("fun_"):
-        await fun_callback(update, context)
-    elif data == "main_menu":
-        await main_menu(update, context)
-    elif data == "global_settings":
-        await global_settings(update, context)
-    elif data == "admin_panel":
-        await admin_panel(update, context)
-    elif data == "admin_stats":
-        await admin_stats(update, context)
-    else:
-        await update.callback_query.edit_message_text("Unknown action.")
-
+# ---------- MAIN ----------
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Run async setup to get the application object
+    app = asyncio.run(setup())
+    # Start polling synchronously (handles its own event loop)
+    app.run_polling()
