@@ -3,10 +3,10 @@
 
 """
 ╔══════════════════════════════════════════════════════════════════════════╗
-║   ULTIMATE MEGA BOT – v13.3 – 1000+ FEATURES – PREMIUM EDITION        ║
+║   ULTIMATE MEGA BOT – v13.4 – 1000+ FEATURES – PREMIUM EDITION        ║
 ║   ⚡ 1000x Speed  🔥 Enterprise‑Grade  🛡️ Military‑Grade Security      ║
 ║   👑 Developer: DK Sharma  |  📌 Admin: @OfficalEarningZone            ║
-║   🔐 Per‑User Report Login  |  🛡️ Zero Runtime Errors (Fixed Loop)    ║
+║   🔐 Per‑User Report Login  |  🛡️ Zero Runtime Errors (Fixed Global)  ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 """
 
@@ -129,6 +129,9 @@ REPORT_MAX_TARGETS = 10
 # Telethon credentials (only used for session creation, not for main login)
 API_ID = 32956022
 API_HASH = "5853b9eed0e062cebce5e46203f767ac"
+
+# ---------- Global Application Reference ----------
+APPLICATION = None  # Will hold the bot application instance
 
 # ---------- Database Initialisation ----------
 async def init_all_dbs():
@@ -1396,7 +1399,8 @@ async def report_worker(user_id: int):
 
     client = await get_user_report_client(user_id)
     if not client:
-        await application.bot.send_message(user_id, "❌ Your session expired. Please login again.")
+        if APPLICATION:
+            await APPLICATION.bot.send_message(user_id, "❌ Your session expired. Please login again.")
         session["active"] = False
         return
 
@@ -1503,6 +1507,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ========== MAIN ==========
 async def main():
+    global APPLICATION  # allow assignment to global
     await init_all_dbs()
 
     global REG_PROXY_MANAGER
@@ -1535,7 +1540,8 @@ async def main():
                     for n in nums:
                         if n[3]: continue
                         ok, msg = await unban_send_email(tid, n[0], user["name"] or "User", user["reason"] or "personal communication")
-                        await application.bot.send_message(tid, f"{'✅' if ok else '❌'} {n[0]}: {msg}")
+                        if APPLICATION:
+                            await APPLICATION.bot.send_message(tid, f"{'✅' if ok else '❌'} {n[0]}: {msg}")
                         await asyncio.sleep(user["delay"] if user else 1.0)
                 except asyncio.CancelledError:
                     break
@@ -1545,6 +1551,7 @@ async def main():
     UNBAN_AUTO_ENGINE = SimpleAutoEngine()
 
     application = Application.builder().token(BOT_TOKEN).build()
+    APPLICATION = application  # store for background tasks
 
     # Handlers
     application.add_handler(CommandHandler("start", module_start))
@@ -1555,10 +1562,6 @@ async def main():
 
     # Callback query handler for all modules
     application.add_handler(CallbackQueryHandler(global_callback_handler, pattern="^"))
-
-    # Store application reference for use in background tasks
-    global application
-    application = application
 
     # Start polling
     await application.run_polling()
