@@ -99,7 +99,7 @@ logger = logging.getLogger("MegaBot")
 logger.setLevel(logging.INFO)
 
 # ---------- Configuration ----------
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"          # <-- REPLACE WITH YOUR BOT TOKEN
+BOT_TOKEN = "8693119356:AAHx4OVS1BzhcpEjsDqRdwEnOn1V2QwTNCk"          # <-- REPLACE WITH YOUR BOT TOKEN
 ADMIN_IDS = [5888777479]                   # <-- REPLACE WITH ADMIN TELEGRAM IDs
 
 # Module-specific settings
