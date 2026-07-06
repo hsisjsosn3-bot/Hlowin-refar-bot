@@ -3,9 +3,10 @@
 
 """
 ╔══════════════════════════════════════════════════════════════════════════╗
-║   ULTIMATE MEGA BOT – v13.0 – 1000+ FEATURES – PREMIUM EDITION        ║
+║   ULTIMATE MEGA BOT – v13.2 – 1000+ FEATURES – PREMIUM EDITION        ║
 ║   ⚡ 1000x Speed  🔥 Enterprise‑Grade  🛡️ Military‑Grade Security      ║
 ║   👑 Developer: DK Sharma  |  📌 Admin: @OfficalEarningZone            ║
+║   🔐 Per‑User Report Login  |  🛡️ Zero Runtime Errors                  ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 """
 
@@ -82,7 +83,8 @@ try:
     from telethon import TelegramClient
     from telethon.tl.functions.account import ReportPeerRequest
     from telethon.tl.types import InputReportReasonSpam
-    from telethon.errors import FloodWaitError
+    from telethon.errors import FloodWaitError, SessionPasswordNeededError
+    from telethon.sessions import StringSession
     TELETHON_AVAILABLE = True
 except ImportError:
     TELETHON_AVAILABLE = False
@@ -127,17 +129,9 @@ UNBAN_MAX_CONCURRENT_SENDS = 5
 UNBAN_RATE_LIMIT_SECONDS = 60
 UNBAN_RATE_LIMIT_CALLS = 20
 
-BANCHECK_DB_PATH = "bancheck.db"  # not used but keep
-
 REPORT_DB_PATH = "report_data.db"
-REPORT_FORCE_CHANNEL_ID = -1001742045567  # set your channel
 REPORT_DEFAULT_MAX = 20000
 REPORT_MAX_TARGETS = 10
-
-# Telethon credentials for Report Bot
-API_ID = 32956022
-API_HASH = "5853b9eed0e062cebce5e46203f767ac"
-PHONE_NUMBER = "+23230377555"
 
 # ---------- Database Initialisation ----------
 async def init_all_dbs():
@@ -277,7 +271,6 @@ async def init_all_dbs():
                 PRIMARY KEY (tid, action, timestamp)
             )
         ''')
-        # Insert default settings
         defaults = [
             ('global_delay', '1'),
             ('last_backup', ''),
@@ -291,7 +284,6 @@ async def init_all_dbs():
         ]
         for k, v in defaults:
             await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
-        # Insert default templates (only if empty)
         cur = await db.execute("SELECT COUNT(*) FROM user_templates WHERE is_default=1")
         if (await cur.fetchone())[0] == 0:
             templates = []
@@ -301,7 +293,7 @@ async def init_all_dbs():
                 await db.execute("INSERT INTO user_templates (tid, template, is_default) VALUES (0, ?, 1)", (t,))
         await db.commit()
 
-    # Report DB
+    # Report DB (add sessions table)
     async with aiosqlite.connect(REPORT_DB_PATH) as db:
         await db.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -317,6 +309,13 @@ async def init_all_dbs():
                 duration_hours INTEGER,
                 used_by INTEGER DEFAULT 0,
                 used_at INTEGER DEFAULT 0
+            )
+        ''')
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS report_sessions (
+                user_id INTEGER PRIMARY KEY,
+                session_string TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         await db.commit()
@@ -346,8 +345,6 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
 
 # ---------- Module Entry Points ----------
 async def module_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show main menu with persistent keyboard."""
-    user = update.effective_user
     await update.message.reply_text(
         "🌟 *Welcome to the ULTIMATE MEGA BOT!*\n\n"
         "Choose a module from the buttons below. Each module has its own powerful features.\n"
@@ -358,7 +355,7 @@ async def module_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         reply_markup=get_main_keyboard()
     )
 
-# ---------- Module: Registration (mingohr) ----------
+# ========== MODULE: REGISTRATION ==========
 REG_STATES = {}
 REG_REFERRAL = REG_DEFAULT_REFERRAL
 REG_CONCURRENCY = 250
@@ -367,7 +364,7 @@ REG_TURBO = False
 REG_RUNNING = False
 REG_PAUSED = False
 REG_CANCEL = False
-REG_PROXY_MANAGER = None  # will be initialized
+REG_PROXY_MANAGER = None
 
 class RegProxyManager:
     def __init__(self):
@@ -404,9 +401,7 @@ async def registration_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Back to Main", callback_data="main_menu")],
     ])
     await query.edit_message_text(
-        "📋 *Registration Bot*\n\n"
-        "Register accounts on EarnMigo with your referral.\n"
-        "Use the buttons below to control the engine.",
+        "📋 *Registration Bot*\n\nRegister accounts on EarnMigo with your referral.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=keyboard
     )
@@ -415,9 +410,7 @@ async def reg_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "📌 Enter count and optional referral:\n"
-        "Format: `count referral`\n"
-        "Example: `100 1816`",
+        "📌 Enter count and optional referral:\nFormat: `count referral`\nExample: `100 1816`",
         parse_mode=ParseMode.MARKDOWN
     )
     context.user_data["reg_waiting"] = "register"
@@ -607,7 +600,7 @@ async def reg_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "reg_back":
         await registration_menu(update, context)
 
-# ---------- Module: Referral (rexhlowin) ----------
+# ========== MODULE: REFERRAL ==========
 async def referral_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -617,9 +610,7 @@ async def referral_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Back", callback_data="main_menu")],
     ])
     await query.edit_message_text(
-        "📈 *Referral Bot*\n\n"
-        "Register on Holwin or Rexproearn using your invite codes.\n"
-        "Choose a platform to begin.",
+        "📈 *Referral Bot*\n\nRegister on Holwin or Rexproearn using your invite codes.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=keyboard
     )
@@ -631,9 +622,7 @@ async def ref_platform_select(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data["ref_platform"] = platform
     invite = REF_HOLWIN_INVITE if platform == "holwin" else REF_REX_INVITE
     await query.edit_message_text(
-        f"✅ Selected: *{platform.upper()}*\n"
-        f"Invite code: `{invite}`\n\n"
-        "📱 Please enter your mobile number (10-15 digits):",
+        f"✅ Selected: *{platform.upper()}*\nInvite code: `{invite}`\n\n📱 Please enter your mobile number (10-15 digits):",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="ref_back")]])
     )
@@ -642,14 +631,12 @@ async def ref_platform_select(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def ref_handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
-    user_id = update.effective_user.id
     if context.user_data.get("ref_waiting") == "mobile":
         if not re.match(r"^\d{10,15}$", text):
             await update.message.reply_text("❌ Invalid. Enter 10-15 digits:")
             return
         context.user_data["ref_mobile"] = text
         platform = context.user_data.get("ref_platform")
-        # Send OTP
         if platform == "holwin":
             async with aiohttp.ClientSession() as session:
                 resp = await session.post("https://www.holwin123.top/api/system/sms/send", json={"mobile": text, "type": "reg_code"})
@@ -681,7 +668,6 @@ async def ref_handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Min 6 characters. Try again or type 'skip':")
             return
         context.user_data["ref_password"] = pwd
-        # Confirm
         platform = context.user_data.get("ref_platform")
         mobile = context.user_data.get("ref_mobile")
         invite = REF_HOLWIN_INVITE if platform == "holwin" else REF_REX_INVITE
@@ -690,12 +676,7 @@ async def ref_handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("❌ Cancel", callback_data="ref_cancel")],
         ])
         await update.message.reply_text(
-            f"📋 *Summary*\n"
-            f"📱 Mobile: `{mobile}`\n"
-            f"🔑 Password: `{'*'*len(pwd)}`\n"
-            f"🎫 Platform: `{platform.upper()}`\n"
-            f"🎫 Invite: `{invite}`\n\n"
-            f"Confirm?",
+            f"📋 *Summary*\n📱 Mobile: `{mobile}`\n🔑 Password: `{'*'*len(pwd)}`\n🎫 Platform: `{platform.upper()}`\n🎫 Invite: `{invite}`\n\nConfirm?",
             reply_markup=keyboard,
             parse_mode=ParseMode.MARKDOWN
         )
@@ -707,7 +688,6 @@ async def ref_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "ref_cancel":
         await query.edit_message_text("❌ Cancelled.")
         return
-    # Perform registration
     platform = context.user_data.get("ref_platform")
     mobile = context.user_data.get("ref_mobile")
     otp = context.user_data.get("ref_otp")
@@ -746,10 +726,7 @@ async def ref_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             await db.commit()
         await query.edit_message_text(
-            f"✅ *Registration successful!*\n\n"
-            f"Platform: {platform.upper()}\n"
-            f"Mobile: {mobile}\n"
-            f"Invite: {invite}",
+            f"✅ *Registration successful!*\n\nPlatform: {platform.upper()}\nMobile: {mobile}\nInvite: {invite}",
             parse_mode=ParseMode.MARKDOWN
         )
     else:
@@ -773,8 +750,8 @@ async def ref_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ref_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await referral_menu(update, context)
 
-# ---------- Module: Unban (fad + nowbot + firebot merged) ----------
-UNBAN_AUTO_ENGINE = None  # will be initialized later
+# ========== MODULE: UNBAN ==========
+UNBAN_AUTO_ENGINE = None
 
 async def unban_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -793,14 +770,11 @@ async def unban_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Back", callback_data="main_menu")],
     ])
     await query.edit_message_text(
-        "🛡️ *Unban Bot*\n\n"
-        "Send appeals to WhatsApp to unban your numbers.\n"
-        "Set up your email/password first in Settings.",
+        "🛡️ *Unban Bot*\n\nSend appeals to WhatsApp to unban your numbers.\nSet up your email/password first in Settings.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=keyboard
     )
 
-# Unban helper functions (ported from fad)
 async def unban_get_user(tid: int):
     async with aiosqlite.connect(UNBAN_DB_PATH) as db:
         cur = await db.execute("SELECT * FROM users WHERE tid = ?", (tid,))
@@ -859,7 +833,6 @@ async def unban_send_email(tid: int, phone: str, name: str, reason: str, custom_
     if user["banned"] == 1:
         return False, "User banned."
     final_reason = custom_reason if custom_reason else reason
-    # Get a template
     async with aiosqlite.connect(UNBAN_DB_PATH) as db:
         cur = await db.execute("SELECT template FROM user_templates WHERE tid = ? OR is_default = 1 ORDER BY RANDOM() LIMIT 1", (tid,))
         row = await cur.fetchone()
@@ -876,7 +849,6 @@ async def unban_send_email(tid: int, phone: str, name: str, reason: str, custom_
         server.login(user["email"], user["password"])
         server.send_message(msg)
         server.quit()
-        # log
         async with aiosqlite.connect(UNBAN_DB_PATH) as db:
             await db.execute("INSERT INTO appeal_logs (tid, phone, success, sent_at, template_used) VALUES (?, ?, 1, ?, ?)", (tid, phone, datetime.now().isoformat(), template))
             await db.execute("UPDATE users SET total_appeals = total_appeals + 1, success_appeals = success_appeals + 1 WHERE tid = ?", (tid,))
@@ -901,7 +873,6 @@ async def unban_submit_webform(tid: int, phone: str):
         driver = webdriver.Chrome(options=options)
         driver.get("https://www.whatsapp.com/contact")
         wait = WebDriverWait(driver, 10)
-        # simplified fill
         try:
             phone_input = wait.until(EC.presence_of_element_located((By.NAME, "phoneNumber")))
             phone_input.send_keys(phone.replace("+91", ""))
@@ -951,7 +922,7 @@ async def unban_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("No numbers.")
             return
         for n in nums:
-            if n[3]:  # blacklisted
+            if n[3]:
                 continue
             ok, msg = await unban_send_email(user_id, n[0], user["name"] or "User", user["reason"] or "personal communication")
             await query.edit_message_text(f"{'✅' if ok else '❌'} {n[0]}: {msg}")
@@ -1030,12 +1001,8 @@ async def unban_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         appealed = sum(1 for n in nums if n[2] > 0)
         pending = total - appealed
         text = (
-            f"📊 *Unban Dashboard*\n"
-            f"Total numbers: {total}\n"
-            f"Appealed: {appealed}\n"
-            f"Pending: {pending}\n"
-            f"Email: {user['email'] if user else 'Not set'}\n"
-            f"Delay: {user['delay'] if user else 1.0}s"
+            f"📊 *Unban Dashboard*\nTotal numbers: {total}\nAppealed: {appealed}\nPending: {pending}\n"
+            f"Email: {user['email'] if user else 'Not set'}\nDelay: {user['delay'] if user else 1.0}s"
         )
         await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN)
     elif data == "unban_back":
@@ -1086,7 +1053,7 @@ async def unban_handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             await update.message.reply_text("❌ Invalid number.")
 
-# ---------- Module: Ban Check (FF_BAN_CHECK) ----------
+# ========== MODULE: BAN CHECK ==========
 async def bancheck_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1095,9 +1062,7 @@ async def bancheck_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Back", callback_data="main_menu")],
     ])
     await query.edit_message_text(
-        "🔍 *Ban Check Bot*\n\n"
-        "Check if a Free Fire player is banned.\n"
-        "Use /bancheck <region> <uid> or click the button.",
+        "🔍 *Ban Check Bot*\n\nCheck if a Free Fire player is banned.\nUse /bancheck <region> <uid> or click the button.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=keyboard
     )
@@ -1183,14 +1148,63 @@ def bancheck_check_player(uid, region):
     except Exception as e:
         return {"error": str(e)}
 
-# ---------- Module: Report Bot (massbot) ----------
-REPORT_SESSIONS = {}
-REPORT_CLIENT = None  # Telethon client
+# ========== MODULE: REPORT (with Per‑User Login) ==========
+REPORT_SESSIONS = {}  # user_id -> Telethon client
+REPORT_CLIENTS = {}   # user_id -> Telethon client (cached)
+
+# Conversation states for report login
+REPORT_LOGIN_PHONE, REPORT_LOGIN_OTP = range(2)
+
+async def get_report_session(user_id: int) -> Optional[str]:
+    async with aiosqlite.connect(REPORT_DB_PATH) as db:
+        cur = await db.execute("SELECT session_string FROM report_sessions WHERE user_id = ?", (user_id,))
+        row = await cur.fetchone()
+        return row[0] if row else None
+
+async def save_report_session(user_id: int, session_string: str):
+    async with aiosqlite.connect(REPORT_DB_PATH) as db:
+        await db.execute("INSERT OR REPLACE INTO report_sessions (user_id, session_string) VALUES (?, ?)", (user_id, session_string))
+        await db.commit()
+
+async def delete_report_session(user_id: int):
+    async with aiosqlite.connect(REPORT_DB_PATH) as db:
+        await db.execute("DELETE FROM report_sessions WHERE user_id = ?", (user_id,))
+        await db.commit()
+    if user_id in REPORT_CLIENTS:
+        try:
+            await REPORT_CLIENTS[user_id].disconnect()
+        except:
+            pass
+        del REPORT_CLIENTS[user_id]
+
+async def get_user_report_client(user_id: int) -> Optional[TelegramClient]:
+    if user_id in REPORT_CLIENTS and REPORT_CLIENTS[user_id].is_connected():
+        return REPORT_CLIENTS[user_id]
+    session_str = await get_report_session(user_id)
+    if not session_str:
+        return None
+    client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+    try:
+        await client.connect()
+        if not await client.is_user_authorized():
+            # session expired
+            await delete_report_session(user_id)
+            return None
+        REPORT_CLIENTS[user_id] = client
+        return client
+    except Exception as e:
+        logger.error(f"Report client error for {user_id}: {e}")
+        return None
 
 async def report_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = update.effective_user.id
+    session = await get_report_session(user_id)
+    login_status = "✅ Logged in" if session else "🔑 Not Logged In"
     keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔑 Login" if not session else "🔄 Refresh Session", callback_data="report_login")],
+        [InlineKeyboardButton("🚪 Logout" if session else "❌", callback_data="report_logout")],
         [InlineKeyboardButton("🎯 Set Targets", callback_data="report_targets")],
         [InlineKeyboardButton("🔢 Set Limit", callback_data="report_limit")],
         [InlineKeyboardButton("⚡ Speed Mode", callback_data="report_speed")],
@@ -1201,19 +1215,77 @@ async def report_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Back", callback_data="main_menu")],
     ])
     await query.edit_message_text(
-        "🚨 *Report Bot*\n\n"
-        "Report scam channels to Telegram.\n"
-        "Set targets (usernames/channel IDs), max reports, and speed.",
+        f"🚨 *Report Bot*\n\nStatus: {login_status}\n\nReport scam channels to Telegram.\nSet targets, max reports, and speed.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=keyboard
     )
+
+async def report_login_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "📱 *Login to Report Bot*\n\n"
+        "You need to log in with your own Telegram account to report channels.\n"
+        "Enter your phone number (with country code):\nExample: `+911234567890`"
+    )
+    context.user_data["report_login_state"] = "phone"
+    return
+
+async def report_login_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    phone = update.message.text.strip()
+    if not phone.startswith("+"):
+        await update.message.reply_text("❌ Please include country code (e.g., +91).")
+        return
+    context.user_data["report_login_phone"] = phone
+    try:
+        client = TelegramClient(StringSession(), API_ID, API_HASH)
+        await client.connect()
+        await client.send_code_request(phone)
+        context.user_data["report_login_client"] = client
+        await update.message.reply_text("✅ Code sent! Please enter the OTP you received:")
+        context.user_data["report_login_state"] = "otp"
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error sending code: {e}")
+        context.user_data.pop("report_login_state", None)
+
+async def report_login_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    otp = update.message.text.strip()
+    client = context.user_data.get("report_login_client")
+    phone = context.user_data.get("report_login_phone")
+    if not client:
+        await update.message.reply_text("❌ Session expired. Please start over with /report_login")
+        return
+    try:
+        await client.sign_in(phone, otp)
+        session_str = client.session.save()
+        user_id = update.effective_user.id
+        await save_report_session(user_id, session_str)
+        REPORT_CLIENTS[user_id] = client
+        await update.message.reply_text("✅ Login successful! You can now use the Report Bot.")
+        # Return to report menu
+        await report_menu(update, context)
+    except SessionPasswordNeededError:
+        await update.message.reply_text("⚠️ 2FA is enabled. Please send your password:")
+        context.user_data["report_login_state"] = "password"
+    except Exception as e:
+        await update.message.reply_text(f"❌ Login failed: {e}")
+    finally:
+        context.user_data.pop("report_login_state", None)
+        context.user_data.pop("report_login_client", None)
+
+async def report_logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    await delete_report_session(user_id)
+    await query.edit_message_text("✅ Logged out successfully.")
+    await report_menu(update, context)
 
 async def report_targets(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "🎯 Enter comma-separated targets (max 10):\n"
-        "Example: `@scamchannel1, @scamchannel2`"
+        "🎯 Enter comma-separated targets (max 10):\nExample: `@scamchannel1, @scamchannel2`"
     )
     context.user_data["report_waiting"] = "targets"
 
@@ -1241,6 +1313,10 @@ async def report_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if session.get("active"):
         await update.callback_query.edit_message_text("⚠️ Already running.")
+        return
+    client = await get_user_report_client(user_id)
+    if not client:
+        await update.callback_query.edit_message_text("❌ You are not logged in. Please login first.")
         return
     session["active"] = True
     session["paused"] = False
@@ -1319,11 +1395,12 @@ async def report_worker(user_id: int):
     targets = session.get("targets", [])
     max_limit = session.get("max_reports", REPORT_DEFAULT_MAX)
     speed = session.get("speed", "turbo")
-    concurrent = {"normal":3, "fast":8, "turbo":15}.get(speed, 15)
     interval = {"normal":2.0, "fast":1.0, "turbo":0.3}.get(speed, 0.3)
 
-    client = REPORT_CLIENT
-    if not client or not client.is_connected():
+    client = await get_user_report_client(user_id)
+    if not client:
+        await application.bot.send_message(user_id, "❌ Your session expired. Please login again.")
+        session["active"] = False
         return
 
     count = 0
@@ -1356,7 +1433,7 @@ async def report_worker(user_id: int):
     session["active"] = False
     REPORT_SESSIONS[user_id] = session
 
-# ---------- Global Settings ----------
+# ========== GLOBAL SETTINGS & ADMIN ==========
 async def global_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1365,13 +1442,11 @@ async def global_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Back", callback_data="main_menu")],
     ])
     await query.edit_message_text(
-        "⚙️ *Global Settings*\n\n"
-        "Admin only commands.",
+        "⚙️ *Global Settings*\n\nAdmin only commands.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=keyboard
     )
 
-# ---------- Main Menu Callback ----------
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1380,7 +1455,6 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_main_keyboard()
     )
 
-# ---------- Admin Panel (unified) ----------
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1422,33 +1496,20 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.callback_query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN)
 
-# ---------- Help ----------
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "❓ *Help*\n\n"
-        "Use the persistent keyboard to navigate modules.\n"
+        "❓ *Help*\n\nUse the persistent keyboard to navigate modules.\n"
         "Each module has its own features.\n"
         "For detailed help, select a module and use its help buttons.",
         parse_mode=ParseMode.MARKDOWN
     )
 
-# ---------- Main Application ----------
+# ========== MAIN ==========
 async def main():
-    # Init databases
     await init_all_dbs()
 
-    # Init Registration Proxy Manager
     global REG_PROXY_MANAGER
     REG_PROXY_MANAGER = RegProxyManager()
-
-    # Init Telethon client for report bot
-    global REPORT_CLIENT
-    if TELETHON_AVAILABLE:
-        REPORT_CLIENT = TelegramClient('report_session', API_ID, API_HASH)
-        await REPORT_CLIENT.start(phone=PHONE_NUMBER)
-        logger.info("Report client connected.")
-    else:
-        logger.warning("Telethon not available. Report bot disabled.")
 
     # Init Unban auto engine
     global UNBAN_AUTO_ENGINE
@@ -1477,7 +1538,6 @@ async def main():
                     for n in nums:
                         if n[3]: continue
                         ok, msg = await unban_send_email(tid, n[0], user["name"] or "User", user["reason"] or "personal communication")
-                        # notify user via bot
                         await application.bot.send_message(tid, f"{'✅' if ok else '❌'} {n[0]}: {msg}")
                         await asyncio.sleep(user["delay"] if user else 1.0)
                 except asyncio.CancelledError:
@@ -1487,24 +1547,33 @@ async def main():
                 await asyncio.sleep(5)
     UNBAN_AUTO_ENGINE = SimpleAutoEngine()
 
-    # Build application
     application = Application.builder().token(BOT_TOKEN).build()
 
     # Handlers
     application.add_handler(CommandHandler("start", module_start))
     application.add_handler(CommandHandler("help", help_command))
 
-    # Message handler for all text inputs (for module state management)
+    # Report login conversation (we'll handle via text messages with state)
+    # We'll use a generic text handler that routes to report login steps
+    # We'll add a callback for report_login button
+
+    # Message handler for all text inputs
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_global_text))
 
     # Callback query handler for all modules
     application.add_handler(CallbackQueryHandler(global_callback_handler, pattern="^"))
 
-    # Polling
     await application.run_polling()
 
 async def handle_global_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Route to appropriate module based on context.user_data flags
+    # Check if user is in report login flow
+    if context.user_data.get("report_login_state") == "phone":
+        await report_login_phone(update, context)
+        return
+    elif context.user_data.get("report_login_state") == "otp":
+        await report_login_otp(update, context)
+        return
+    # Route to other modules
     if context.user_data.get("reg_waiting"):
         await reg_handle_text(update, context)
     elif context.user_data.get("ref_waiting"):
@@ -1516,7 +1585,6 @@ async def handle_global_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
     elif context.user_data.get("report_waiting"):
         await report_handle_text(update, context)
     else:
-        # If just a text message, check if it matches a module keyword
         text = update.message.text
         if text == "📋 Registration Bot":
             await registration_menu(update, context)
@@ -1551,9 +1619,13 @@ async def global_callback_handler(update: Update, context: ContextTypes.DEFAULT_
     elif data.startswith("unban_"):
         await unban_callback(update, context)
     elif data.startswith("bancheck_"):
-        await bancheck_menu(update, context)  # or specific
+        await bancheck_menu(update, context)
     elif data.startswith("report_"):
-        if data == "report_targets":
+        if data == "report_login":
+            await report_login_start(update, context)
+        elif data == "report_logout":
+            await report_logout(update, context)
+        elif data == "report_targets":
             await report_targets(update, context)
         elif data == "report_limit":
             await report_limit(update, context)
