@@ -3,10 +3,10 @@
 
 """
 ╔══════════════════════════════════════════════════════════════════════════╗
-║   ULTIMATE MEGA BOT – v13.5 – 1040+ FEATURES – PREMIUM EDITION        ║
+║   ULTIMATE MEGA BOT – v13.6 – 1040+ FEATURES – PREMIUM EDITION        ║
 ║   ⚡ 1000x Speed  🔥 Enterprise‑Grade  🛡️ Military‑Grade Security      ║
 ║   👑 Developer: DK Sharma  |  📌 Admin: @OfficalEarningZone            ║
-║   🔐 Per‑User Report Login  |  🛡️ Zero Runtime Errors (Fixed Global)  ║
+║   🔐 Per‑User Report Login with own API ID/HASH                       ║
 ║   🎯 40+ New Utility/Fun Commands Added                               ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 """
@@ -77,7 +77,7 @@ try:
     from telethon import TelegramClient
     from telethon.tl.functions.account import ReportPeerRequest
     from telethon.tl.types import InputReportReasonSpam
-    from telethon.errors import FloodWaitError, SessionPasswordNeededError
+    from telethon.errors import FloodWaitError, SessionPasswordNeededError, ApiIdInvalidError
     from telethon.sessions import StringSession
     TELETHON_AVAILABLE = True
 except ImportError:
@@ -100,10 +100,20 @@ logger = logging.getLogger("MegaBot")
 logger.setLevel(logging.INFO)
 
 # ---------- Configuration ----------
-BOT_TOKEN = "8693119356:AAFD5dhQUSKPTCxcsuf9b1uHlgLKmsGcVS0"          # <-- REPLACE WITH YOUR BOT TOKEN
-ADMIN_IDS = [5888777479]                   # <-- REPLACE WITH ADMIN TELEGRAM IDs
+# 🔹 Directly set your bot token here (REQUIRED)
+BOT_TOKEN = "8693119356:AAGosz0y5JDlGhp-0XeiImlfWAu9guxNepc"   # <-- REPLACE WITH YOUR BOT TOKEN
 
-# Module-specific settings
+# 🔹 Optionally, you can also set via environment variable (overrides the above)
+if os.getenv("BOT_TOKEN"):
+    BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN is not set. Please set it in the code or as environment variable.")
+
+# 🔹 Admin IDs – add your Telegram user IDs here
+ADMIN_IDS = [5888777479]   # <-- REPLACE WITH YOUR ADMIN IDs (comma separated if multiple)
+
+# Module-specific settings (no changes needed)
 REG_DEFAULT_REFERRAL = "1816"
 REG_DEFAULT_PASSWORD = "Test@123"
 REG_VERIFY_CODE = "7777"
@@ -127,12 +137,12 @@ REPORT_DB_PATH = "report_data.db"
 REPORT_DEFAULT_MAX = 20000
 REPORT_MAX_TARGETS = 10
 
-# Telethon credentials (only used for session creation, not for main login)
-API_ID = 32956022
-API_HASH = "5853b9eed0e062cebce5e46203f767ac"
+# Telethon credentials are no longer global; each user provides their own
+# But we keep these as fallback if needed, but we'll not use them.
+# API_ID and API_HASH are removed from global config.
 
 # ---------- Global Application Reference ----------
-APPLICATION = None  # Will hold the bot application instance
+APPLICATION = None
 BOT_START_TIME = datetime.now()
 
 # ---------- Database Initialisation ----------
@@ -295,7 +305,7 @@ async def init_all_dbs():
                 await db.execute("INSERT INTO user_templates (tid, template, is_default) VALUES (0, ?, 1)", (t,))
         await db.commit()
 
-    # Report DB (add sessions table)
+    # Report DB (add api_id and api_hash columns)
     async with aiosqlite.connect(REPORT_DB_PATH) as db:
         await db.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -313,13 +323,24 @@ async def init_all_dbs():
                 used_at INTEGER DEFAULT 0
             )
         ''')
+        # Add api_id and api_hash columns to report_sessions
         await db.execute('''
             CREATE TABLE IF NOT EXISTS report_sessions (
                 user_id INTEGER PRIMARY KEY,
                 session_string TEXT,
+                api_id INTEGER,
+                api_hash TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        # For existing tables, add columns if not exist (sqlite doesn't support IF NOT EXISTS for columns easily, we'll alter)
+        # We'll just ensure the table has these columns by checking and altering if needed.
+        cur = await db.execute("PRAGMA table_info(report_sessions)")
+        columns = [row[1] for row in await cur.fetchall()]
+        if 'api_id' not in columns:
+            await db.execute("ALTER TABLE report_sessions ADD COLUMN api_id INTEGER")
+        if 'api_hash' not in columns:
+            await db.execute("ALTER TABLE report_sessions ADD COLUMN api_hash TEXT")
         await db.commit()
 
     logger.info("All databases initialised.")
@@ -373,22 +394,31 @@ class RegProxyManager:
     def __init__(self):
         self.proxies = []
         self.alive = set()
-        self.lock = asyncio.Lock()
-    def add_proxy(self, proxy: str) -> bool:
+        self._lock = None  # lazy initialization
+
+    def _get_lock(self):
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
+
+    async def add_proxy(self, proxy: str) -> bool:
         proxy = proxy.strip()
         if not proxy or "://" not in proxy:
             return False
-        self.proxies.append(proxy)
-        self.alive.add(proxy)
+        async with self._get_lock():
+            self.proxies.append(proxy)
+            self.alive.add(proxy)
         return True
+
     async def get_proxy(self):
-        async with self.lock:
+        async with self._get_lock():
             alive = [p for p in self.proxies if p in self.alive]
             if not alive:
                 return None
             return random.choice(alive)
+
     async def mark_dead(self, proxy):
-        async with self.lock:
+        async with self._get_lock():
             self.alive.discard(proxy)
 
 async def registration_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1151,22 +1181,27 @@ def bancheck_check_player(uid, region):
     except Exception as e:
         return {"error": str(e)}
 
-# ========== MODULE: REPORT (with Per‑User Login) ==========
+# ========== MODULE: REPORT (with Per‑User Login and own API) ==========
 REPORT_SESSIONS = {}  # user_id -> session data
 REPORT_CLIENTS = {}   # user_id -> Telethon client (cached)
 
 # Conversation states for report login
-REPORT_LOGIN_PHONE, REPORT_LOGIN_OTP = range(2)
+REPORT_LOGIN_API_ID, REPORT_LOGIN_API_HASH, REPORT_LOGIN_PHONE, REPORT_LOGIN_OTP = range(4)
 
-async def get_report_session(user_id: int) -> Optional[str]:
+async def get_report_session(user_id: int) -> Optional[Dict]:
     async with aiosqlite.connect(REPORT_DB_PATH) as db:
-        cur = await db.execute("SELECT session_string FROM report_sessions WHERE user_id = ?", (user_id,))
+        cur = await db.execute("SELECT session_string, api_id, api_hash FROM report_sessions WHERE user_id = ?", (user_id,))
         row = await cur.fetchone()
-        return row[0] if row else None
+        if row:
+            return {"session": row[0], "api_id": row[1], "api_hash": row[2]}
+        return None
 
-async def save_report_session(user_id: int, session_string: str):
+async def save_report_session(user_id: int, session_string: str, api_id: int, api_hash: str):
     async with aiosqlite.connect(REPORT_DB_PATH) as db:
-        await db.execute("INSERT OR REPLACE INTO report_sessions (user_id, session_string) VALUES (?, ?)", (user_id, session_string))
+        await db.execute(
+            "INSERT OR REPLACE INTO report_sessions (user_id, session_string, api_id, api_hash) VALUES (?, ?, ?, ?)",
+            (user_id, session_string, api_id, api_hash)
+        )
         await db.commit()
 
 async def delete_report_session(user_id: int):
@@ -1183,11 +1218,11 @@ async def delete_report_session(user_id: int):
 async def get_user_report_client(user_id: int) -> Optional[TelegramClient]:
     if user_id in REPORT_CLIENTS and REPORT_CLIENTS[user_id].is_connected():
         return REPORT_CLIENTS[user_id]
-    session_str = await get_report_session(user_id)
-    if not session_str:
+    session_data = await get_report_session(user_id)
+    if not session_data:
         return None
-    client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
     try:
+        client = TelegramClient(StringSession(session_data["session"]), session_data["api_id"], session_data["api_hash"])
         await client.connect()
         if not await client.is_user_authorized():
             # session expired
@@ -1203,11 +1238,11 @@ async def report_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
-    session = await get_report_session(user_id)
-    login_status = "✅ Logged in" if session else "🔑 Not Logged In"
+    session_data = await get_report_session(user_id)
+    login_status = "✅ Logged in" if session_data else "🔑 Not Logged In"
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔑 Login" if not session else "🔄 Refresh Session", callback_data="report_login")],
-        [InlineKeyboardButton("🚪 Logout" if session else "❌", callback_data="report_logout")],
+        [InlineKeyboardButton("🔑 Login" if not session_data else "🔄 Refresh Session", callback_data="report_login")],
+        [InlineKeyboardButton("🚪 Logout" if session_data else "❌", callback_data="report_logout")],
         [InlineKeyboardButton("🎯 Set Targets", callback_data="report_targets")],
         [InlineKeyboardButton("🔢 Set Limit", callback_data="report_limit")],
         [InlineKeyboardButton("⚡ Speed Mode", callback_data="report_speed")],
@@ -1218,7 +1253,7 @@ async def report_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Back", callback_data="main_menu")],
     ])
     await query.edit_message_text(
-        f"🚨 *Report Bot*\n\nStatus: {login_status}\n\nReport scam channels to Telegram.\nSet targets, max reports, and speed.",
+        f"🚨 *Report Bot*\n\nStatus: {login_status}\n\nReport scam channels to Telegram.\nSet targets, max reports, and speed.\n\n*Login requires your own API ID and API Hash* (from my.telegram.org)",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=keyboard
     )
@@ -1228,25 +1263,66 @@ async def report_login_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     await query.edit_message_text(
         "📱 *Login to Report Bot*\n\n"
-        "You need to log in with your own Telegram account to report channels.\n"
-        "Enter your phone number (with country code):\nExample: `+911234567890`"
+        "You need to log in with your own Telegram API credentials.\n"
+        "1. Get API ID and API Hash from my.telegram.org\n"
+        "2. Enter your API ID (numeric):\n"
+        "Type `cancel` to abort."
     )
-    context.user_data["report_login_state"] = "phone"
+    context.user_data["report_login_state"] = "api_id"
     return
+
+async def report_login_api_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if text.lower() == "cancel":
+        await update.message.reply_text("❌ Login cancelled.")
+        context.user_data.pop("report_login_state", None)
+        return
+    try:
+        api_id = int(text)
+        context.user_data["report_api_id"] = api_id
+        await update.message.reply_text("✅ API ID received. Now send your API Hash (e.g., 'abc123...'):")
+        context.user_data["report_login_state"] = "api_hash"
+    except ValueError:
+        await update.message.reply_text("❌ Invalid API ID. Please enter a numeric value or 'cancel'.")
+
+async def report_login_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if text.lower() == "cancel":
+        await update.message.reply_text("❌ Login cancelled.")
+        context.user_data.pop("report_login_state", None)
+        return
+    if len(text) < 10:
+        await update.message.reply_text("❌ API Hash seems too short. Please enter a valid hash (at least 10 characters).")
+        return
+    context.user_data["report_api_hash"] = text
+    await update.message.reply_text("✅ API Hash received. Now enter your phone number with country code (e.g., +911234567890):")
+    context.user_data["report_login_state"] = "phone"
 
 async def report_login_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     phone = update.message.text.strip()
+    if phone.lower() == "cancel":
+        await update.message.reply_text("❌ Login cancelled.")
+        context.user_data.pop("report_login_state", None)
+        return
     if not phone.startswith("+"):
         await update.message.reply_text("❌ Please include country code (e.g., +91).")
         return
     context.user_data["report_login_phone"] = phone
+    api_id = context.user_data.get("report_api_id")
+    api_hash = context.user_data.get("report_api_hash")
+    if not api_id or not api_hash:
+        await update.message.reply_text("❌ Missing API credentials. Restart with /start and try again.")
+        return
     try:
-        client = TelegramClient(StringSession(), API_ID, API_HASH)
+        client = TelegramClient(StringSession(), api_id, api_hash)
         await client.connect()
         await client.send_code_request(phone)
         context.user_data["report_login_client"] = client
         await update.message.reply_text("✅ Code sent! Please enter the OTP you received:")
         context.user_data["report_login_state"] = "otp"
+    except ApiIdInvalidError:
+        await update.message.reply_text("❌ Invalid API ID or API Hash. Please check and try again.")
+        context.user_data.pop("report_login_state", None)
     except Exception as e:
         await update.message.reply_text(f"❌ Error sending code: {e}")
         context.user_data.pop("report_login_state", None)
@@ -1262,7 +1338,9 @@ async def report_login_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await client.sign_in(phone, otp)
         session_str = client.session.save()
         user_id = update.effective_user.id
-        await save_report_session(user_id, session_str)
+        api_id = context.user_data.get("report_api_id")
+        api_hash = context.user_data.get("report_api_hash")
+        await save_report_session(user_id, session_str, api_id, api_hash)
         REPORT_CLIENTS[user_id] = client
         await update.message.reply_text("✅ Login successful! You can now use the Report Bot.")
         # Return to report menu
@@ -1275,6 +1353,9 @@ async def report_login_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     finally:
         context.user_data.pop("report_login_state", None)
         context.user_data.pop("report_login_client", None)
+        context.user_data.pop("report_api_id", None)
+        context.user_data.pop("report_api_hash", None)
+        context.user_data.pop("report_login_phone", None)
 
 async def report_logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1364,6 +1445,20 @@ async def report_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def report_handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     user_id = update.effective_user.id
+    # Check if we are in login flow
+    if context.user_data.get("report_login_state") == "api_id":
+        await report_login_api_id(update, context)
+        return
+    elif context.user_data.get("report_login_state") == "api_hash":
+        await report_login_api_hash(update, context)
+        return
+    elif context.user_data.get("report_login_state") == "phone":
+        await report_login_phone(update, context)
+        return
+    elif context.user_data.get("report_login_state") == "otp":
+        await report_login_otp(update, context)
+        return
+
     if context.user_data.get("report_waiting") == "targets":
         targets = [t.strip() for t in text.split(",") if t.strip()]
         if not targets:
@@ -1643,13 +1738,13 @@ async def backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("💾 Backup completed (simulated).")
 
 # ========== MAIN ==========
-def main():
+async def main():
     global APPLICATION, REG_PROXY_MANAGER, UNBAN_AUTO_ENGINE
 
-    # 1. Run async init
-    asyncio.run(init_all_dbs())
+    # 1. Initialise databases
+    await init_all_dbs()
 
-    # 2. Init proxy manager
+    # 2. Init proxy manager (lazy lock, safe)
     REG_PROXY_MANAGER = RegProxyManager()
 
     # 3. Init unban auto engine
@@ -1708,17 +1803,22 @@ def main():
     # 7. Callback query handler
     application.add_handler(CallbackQueryHandler(global_callback_handler, pattern="^"))
 
-    # 8. Start polling (synchronous)
-    application.run_polling()
+    # 8. Start polling (async)
+    await application.run_polling()
 
 async def handle_global_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check if user is in report login flow
-    if context.user_data.get("report_login_state") == "phone":
-        await report_login_phone(update, context)
+    if context.user_data.get("report_login_state") in ["api_id", "api_hash", "phone", "otp"]:
+        if context.user_data.get("report_login_state") == "api_id":
+            await report_login_api_id(update, context)
+        elif context.user_data.get("report_login_state") == "api_hash":
+            await report_login_api_hash(update, context)
+        elif context.user_data.get("report_login_state") == "phone":
+            await report_login_phone(update, context)
+        elif context.user_data.get("report_login_state") == "otp":
+            await report_login_otp(update, context)
         return
-    elif context.user_data.get("report_login_state") == "otp":
-        await report_login_otp(update, context)
-        return
+
     # Route to other modules
     if context.user_data.get("reg_waiting"):
         await reg_handle_text(update, context)
@@ -1810,4 +1910,4 @@ async def global_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         await update.callback_query.edit_message_text("Unknown action.")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
