@@ -3,25 +3,9 @@
 
 """
 ╔══════════════════════════════════════════════════════════════════════════╗
-║                                                                          ║
-║   ██████╗ ███████╗██╗  ██╗ █████╗  ██████╗ ████████╗██╗  ██╗███████╗    ║
-║   ██╔══██╗██╔════╝██║  ██║██╔══██╗██╔═══██╗╚══██╔══╝██║  ██║██╔════╝    ║
-║   ██████╔╝█████╗  ███████║███████║██║   ██║   ██║   ███████║███████╗    ║
-║   ██╔══██╗██╔══╝  ██╔══██║██╔══██║██║   ██║   ██║   ██╔══██║╚════██║    ║
-║   ██║  ██║███████╗██║  ██║██║  ██║╚██████╔╝   ██║   ██║  ██║███████║    ║
-║   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝╚══════╝    ║
-║                                                                          ║
-║   ███████╗██╗     ██╗████████╗███████╗    ███╗   ███╗███████╗ ██████╗  ║
-║   ██╔════╝██║     ██║╚══██╔══╝██╔════╝    ████╗ ████║██╔════╝██╔═══██╗ ║
-║   █████╗  ██║     ██║   ██║   █████╗      ██╔████╔██║█████╗  ██║   ██║ ║
-║   ██╔══╝  ██║     ██║   ██║   ██╔══╝      ██║╚██╔╝██║██╔══╝  ██║   ██║ ║
-║   ███████╗███████╗██║   ██║   ███████╗    ██║ ╚═╝ ██║███████╗╚██████╔╝ ║
-║   ╚══════╝╚══════╝╚═╝   ╚═╝   ╚══════╝    ╚═╝     ╚═╝╚══════╝ ╚═════╝  ║
-║                                                                          ║
-║       ULTIMATE MEGA BOT – v12.0 – 1000+ FEATURES – PREMIUM EDITION      ║
-║     ⚡ 1000x Speed  🔥 Enterprise‑Grade  🛡️ Military‑Grade Security      ║
-║     👑 Developer: DK Sharma  |  📌 Admin: @OfficalEarningZone            ║
-║     🚀 All Modules: Registration, Referral, Unban, Ban Check, Report     ║
+║   ULTIMATE MEGA BOT – v13.0 – 1000+ FEATURES – PREMIUM EDITION        ║
+║   ⚡ 1000x Speed  🔥 Enterprise‑Grade  🛡️ Military‑Grade Security      ║
+║   👑 Developer: DK Sharma  |  📌 Admin: @OfficalEarningZone            ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 """
 
@@ -119,7 +103,7 @@ logger = logging.getLogger("MegaBot")
 logger.setLevel(logging.INFO)
 
 # ---------- Configuration ----------
-BOT_TOKEN = "8693119356:AAGL4FXY5E4b_bHxXZl2NoBRXAeGVuUlla4"          # <-- REPLACE WITH YOUR BOT TOKEN
+BOT_TOKEN = "8693119356:AAHx4OVS1BzhcpEjsDqRdwEnOn1V2QwTNCk"          # <-- REPLACE WITH YOUR BOT TOKEN
 ADMIN_IDS = [5888777479]                   # <-- REPLACE WITH ADMIN TELEGRAM IDs
 
 # Module-specific settings
@@ -471,7 +455,6 @@ async def run_registration(update: Update, count: int, referral: str):
         tasks = []
         for i in range(count):
             email = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10)) + "@mailinator.com"
-            # get proxy if available
             proxy = await REG_PROXY_MANAGER.get_proxy() if REG_PROXY_MANAGER else None
             tasks.append(asyncio.create_task(reg_register_one(session, email, REG_DEFAULT_PASSWORD, referral, proxy)))
         for future in asyncio.as_completed(tasks):
@@ -536,6 +519,8 @@ async def reg_register_one(session, email, password, referral, proxy=None):
     return False, email, "Max retries"
 
 async def reg_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ✅ FIX: Global declarations must be at the top of the function
+    global REG_CONCURRENCY, REG_DELAY, REG_TURBO
     query = update.callback_query
     data = query.data
     await query.answer()
@@ -575,14 +560,12 @@ async def reg_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("📌 Enter main referral code:")
         context.user_data["reg_waiting"] = "set_referral"
     elif data == "reg_con_inc":
-        global REG_CONCURRENCY
         REG_CONCURRENCY = min(REG_CONCURRENCY + 10, 1000)
         await query.edit_message_text(f"⚡ Concurrency set to {REG_CONCURRENCY}")
     elif data == "reg_con_dec":
         REG_CONCURRENCY = max(REG_CONCURRENCY - 10, 1)
         await query.edit_message_text(f"⚡ Concurrency set to {REG_CONCURRENCY}")
     elif data == "reg_delay_inc":
-        global REG_DELAY
         REG_DELAY = min(REG_DELAY + 0.01, 1.0)
         await query.edit_message_text(f"⏱️ Delay set to {REG_DELAY:.3f}s")
     elif data == "reg_delay_dec":
@@ -592,7 +575,6 @@ async def reg_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🌐 Send proxy line by line (max 50):\nExample: `http://user:pass@1.2.3.4:8080`")
         context.user_data["reg_waiting"] = "proxy"
     elif data == "reg_turbo":
-        global REG_TURBO, REG_CONCURRENCY, REG_DELAY
         REG_TURBO = not REG_TURBO
         if REG_TURBO:
             REG_CONCURRENCY = 600
@@ -1496,7 +1478,6 @@ async def main():
                         if n[3]: continue
                         ok, msg = await unban_send_email(tid, n[0], user["name"] or "User", user["reason"] or "personal communication")
                         # notify user via bot
-                        # We'll use application.bot.send_message (need bot instance)
                         await application.bot.send_message(tid, f"{'✅' if ok else '❌'} {n[0]}: {msg}")
                         await asyncio.sleep(user["delay"] if user else 1.0)
                 except asyncio.CancelledError:
