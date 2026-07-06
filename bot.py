@@ -3,10 +3,10 @@
 
 """
 ╔══════════════════════════════════════════════════════════════════════════╗
-║   ULTIMATE MEGA BOT – v13.2 – 1000+ FEATURES – PREMIUM EDITION        ║
+║   ULTIMATE MEGA BOT – v13.3 – 1000+ FEATURES – PREMIUM EDITION        ║
 ║   ⚡ 1000x Speed  🔥 Enterprise‑Grade  🛡️ Military‑Grade Security      ║
 ║   👑 Developer: DK Sharma  |  📌 Admin: @OfficalEarningZone            ║
-║   🔐 Per‑User Report Login  |  🛡️ Zero Runtime Errors                  ║
+║   🔐 Per‑User Report Login  |  🛡️ Zero Runtime Errors (Fixed Loop)    ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 """
 
@@ -59,13 +59,6 @@ from telegram.ext import (
     MessageHandler, filters, ConversationHandler,
     ContextTypes, CallbackContext
 )
-
-# ---------- Optional Performance Imports ----------
-try:
-    import uvloop
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-except ImportError:
-    pass
 
 # ---------- Selenium & WebDriver (optional) ----------
 try:
@@ -132,6 +125,10 @@ UNBAN_RATE_LIMIT_CALLS = 20
 REPORT_DB_PATH = "report_data.db"
 REPORT_DEFAULT_MAX = 20000
 REPORT_MAX_TARGETS = 10
+
+# Telethon credentials (only used for session creation, not for main login)
+API_ID = 32956022
+API_HASH = "5853b9eed0e062cebce5e46203f767ac"
 
 # ---------- Database Initialisation ----------
 async def init_all_dbs():
@@ -1149,7 +1146,7 @@ def bancheck_check_player(uid, region):
         return {"error": str(e)}
 
 # ========== MODULE: REPORT (with Per‑User Login) ==========
-REPORT_SESSIONS = {}  # user_id -> Telethon client
+REPORT_SESSIONS = {}  # user_id -> session data
 REPORT_CLIENTS = {}   # user_id -> Telethon client (cached)
 
 # Conversation states for report login
@@ -1553,16 +1550,17 @@ async def main():
     application.add_handler(CommandHandler("start", module_start))
     application.add_handler(CommandHandler("help", help_command))
 
-    # Report login conversation (we'll handle via text messages with state)
-    # We'll use a generic text handler that routes to report login steps
-    # We'll add a callback for report_login button
-
     # Message handler for all text inputs
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_global_text))
 
     # Callback query handler for all modules
     application.add_handler(CallbackQueryHandler(global_callback_handler, pattern="^"))
 
+    # Store application reference for use in background tasks
+    global application
+    application = application
+
+    # Start polling
     await application.run_polling()
 
 async def handle_global_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
