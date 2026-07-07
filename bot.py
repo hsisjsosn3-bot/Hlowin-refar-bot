@@ -16,7 +16,7 @@
 ║                                                                           ║
 ║         Developer: DK Sharma 🚀                                           ║
 ║         Admin: @OfficalEarningZone                                        ║
-║         Version: 10.3 – "The Flash"                                      ║
+║         Version: 10.5 – "The Professional"                                ║
 ║                                                                           ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 """
@@ -108,8 +108,8 @@ TIME_ZONE = os.getenv("TIME_ZONE", "Asia/Calcutta")
 EM_API_URL = os.getenv("EM_API_URL", "https://api.earnmigo.com/api/app/user/login/email")
 EM_VERIFY_URL = os.getenv("EM_VERIFY_URL", "https://api.earnmigo.com/api/app/user/info")
 EM_DB_PATH = os.getenv("EM_DB_PATH", "em_registrations.db")
-EM_CONCURRENCY = int(os.getenv("EM_CONCURRENCY", "500"))          # increased from 250
-EM_DELAY = float(os.getenv("EM_DELAY", "0.001"))                  # reduced from 0.002
+EM_CONCURRENCY = int(os.getenv("EM_CONCURRENCY", "500"))
+EM_DELAY = float(os.getenv("EM_DELAY", "0.001"))
 EM_TURBO_CONCURRENCY = int(os.getenv("EM_TURBO_CONCURRENCY", "600"))
 EM_TURBO_DELAY = float(os.getenv("EM_TURBO_DELAY", "0.0"))
 
@@ -131,7 +131,7 @@ HW_DB_PATH = os.getenv("HW_DB_PATH", "holwin_rex.db")
 WB_DB_PATH = os.getenv("WB_DB_PATH", "whatsapp_unban.db")
 WB_DEFAULT_DELAY = float(os.getenv("WB_DEFAULT_DELAY", "1.0"))
 WB_MAX_RETRIES = int(os.getenv("WB_MAX_RETRIES", "3"))
-WB_MAX_CONCURRENT_SENDS = int(os.getenv("WB_MAX_CONCURRENT_SENDS", "10"))   # increased
+WB_MAX_CONCURRENT_SENDS = int(os.getenv("WB_MAX_CONCURRENT_SENDS", "10"))
 RATE_LIMIT_CALLS = int(os.getenv("RATE_LIMIT_CALLS", "20"))
 RATE_LIMIT_PERIOD = int(os.getenv("RATE_LIMIT_PERIOD", "60"))
 
@@ -165,30 +165,6 @@ def cache_stats(ttl=5):
             return result
         return wrapper
     return decorator
-
-def format_em_dashboard(crud, em_engine) -> str:
-    total, success, fail = asyncio.run(crud.em_stats())  # sync call, but we'll use async in handlers
-    if em_engine.running and em_engine.total > 0:
-        elapsed = time.time() - em_engine.start_time if em_engine.start_time else 0
-        rate = em_engine.processed / elapsed if elapsed > 0 else 0
-        remaining = (em_engine.total - em_engine.processed) / rate if rate > 0 else 0
-        progress = em_engine.processed / em_engine.total * 100
-        bar = "█" * int(progress/5) + "░" * (20 - int(progress/5))
-        return boxed(
-            f"Progress: [{bar}] {progress:.1f}%\n"
-            f"✅ Success: {em_engine.success}   ❌ Fail: {em_engine.fail}\n"
-            f"⚡ Speed: {rate:.1f}/s\n"
-            f"⏳ ETA: {remaining:.0f}s\n"
-            f"🕒 Elapsed: {elapsed:.0f}s",
-            "EM Dashboard"
-        )
-    else:
-        return boxed(
-            f"Status: ⏹️ Idle\n"
-            f"Total accounts: {total}\n"
-            f"✅ Success: {success}   ❌ Fail: {fail}",
-            "EM Dashboard"
-        )
 
 # ---------- Database ----------
 class Database:
@@ -225,12 +201,10 @@ class Database:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # Create indexes for speed
         await self.execute("CREATE INDEX IF NOT EXISTS idx_em_status ON em_registrations(status)")
         await self.execute("CREATE INDEX IF NOT EXISTS idx_em_created ON em_registrations(created_at)")
         await self.execute("CREATE INDEX IF NOT EXISTS idx_em_email ON em_registrations(email)")
 
-        # HW users
         await self.execute("""
             CREATE TABLE IF NOT EXISTS hw_users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -677,7 +651,7 @@ class EMEngine:
             ttl_dns_cache=300,
             enable_cleanup_closed=True,
         )
-        timeout = ClientTimeout(total=8, connect=2)  # reduced from 10/3
+        timeout = ClientTimeout(total=8, connect=2)
         sem = asyncio.Semaphore(self.concurrent)
 
         async def worker(session, email):
@@ -710,7 +684,6 @@ class EMEngine:
                     break
                 email = email_list[i] if email_list and i < len(email_list) else ''.join(random.choices(string.ascii_lowercase + string.digits, k=10)) + "@mailinator.com"
                 tasks.append(asyncio.create_task(worker(session, email)))
-            # Gather with return_exceptions to prevent one failure from stopping all
             await asyncio.gather(*tasks, return_exceptions=True)
 
         self.running = False
@@ -839,7 +812,7 @@ class WBEngine:
         self.crud = crud
         self.running = {}
         self.stop_flags = {}
-        self.semaphore = asyncio.Semaphore(WB_MAX_CONCURRENT_SENDS)   # async semaphore
+        self.semaphore = asyncio.Semaphore(WB_MAX_CONCURRENT_SENDS)
 
     async def send_appeal_email(self, tid: int, phone: str, name: str, reason: str, custom_reason: Optional[str] = None) -> Tuple[bool, str]:
         user = await self.crud.wb_get_user(tid)
@@ -886,8 +859,10 @@ class WBEngine:
             await self.crud.wb_update_last_appeal(phone)
             return True, "Email sent"
         except Exception as e:
-            await self.crud.wb_log_appeal(tid, phone, False, str(e), template, "email")
-            return False, f"Error: {str(e)[:40]}"
+            error_msg = str(e)
+            logger.error(f"Email send error for {phone}: {error_msg}")
+            await self.crud.wb_log_appeal(tid, phone, False, error_msg, template, "email")
+            return False, f"Error: {error_msg[:60]}"
 
     async def start_auto(self, tid: int) -> str:
         if tid in self.running and self.running[tid]:
@@ -921,7 +896,6 @@ class WBEngine:
         bot_instance = bot
 
         while not self.stop_flags.get(tid, False):
-            # Send all numbers concurrently with semaphore
             tasks = []
             for num in numbers:
                 if self.stop_flags.get(tid, False):
@@ -931,7 +905,6 @@ class WBEngine:
                     continue
                 custom_reason = num[5]
                 tasks.append(self.send_appeal_email(tid, phone, name, reason, custom_reason))
-            # Send in parallel
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
@@ -1054,13 +1027,14 @@ class WBEngine:
 # ---------- Global bot reference ----------
 bot = None
 
-# ---------- Inline Keyboards (unchanged) ----------
+# ---------- Inline Keyboards ----------
 def main_menu(tid: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🤖 EarnMigo", callback_data="em_menu")],
         [InlineKeyboardButton("📈 Holwin/Rex", callback_data="hw_menu")],
         [InlineKeyboardButton("📱 WhatsApp Unban", callback_data="wb_menu")],
         [InlineKeyboardButton("👤 Profile", callback_data="profile"), InlineKeyboardButton("❓ Help", callback_data="help")],
+        [InlineKeyboardButton("📄 Save Text", callback_data="save_text")]
     ])
 
 def em_main_menu() -> InlineKeyboardMarkup:
@@ -1186,7 +1160,7 @@ def language_selector() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🇫🇷 Français", callback_data="wb_lang_fr")],
     ])
 
-# ---------- Handlers (unchanged but using cached stats) ----------
+# ---------- Handlers ----------
 class CommandHandlers:
     def __init__(self, crud: CRUD, em: EMEngine, hw: HWEngine, wb: WBEngine):
         self.crud = crud
@@ -1218,8 +1192,9 @@ class CommandHandlers:
             "Each engine provides specialized automation.\n\n"
             "🤖 *EarnMigo* – Bulk account registration\n"
             "📈 *Holwin/Rex* – Referral & gaming platform\n"
-            "📱 *WhatsApp Unban* – Automated ban appeals",
-            "MegaBot v10.3"
+            "📱 *WhatsApp Unban* – Automated ban appeals\n"
+            "📄 *Save Text* – Save any text as a file",
+            "MegaBot v10.5"
         )
         await update.message.reply_text(welcome, parse_mode="Markdown", reply_markup=main_menu(tid))
 
@@ -1229,10 +1204,51 @@ class CommandHandlers:
             "Use the main menu buttons to navigate.\n"
             "Each engine has its own features.\n"
             "For admin commands, use /admin.\n"
-            f"Contact {ADMIN_USERNAME} for support.",
+            f"Contact {ADMIN_USERNAME} for support.\n\n"
+            "📄 /savetext – Save any text as a file\n"
+            "👤 /profile – View your profile",
             "Help"
         )
         await update.message.reply_text(help_text, parse_mode="Markdown")
+
+    async def profile(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        tid = update.effective_user.id
+        user = await self.crud.wb_get_user(tid)
+        if not user:
+            await update.message.reply_text("❌ Profile not found.")
+            return
+        stats = await self.crud.wb_get_stats(tid)
+        if stats:
+            total_appeals = stats['total_logs']
+            success_appeals = stats['success_logs']
+            failed_appeals = stats['failed_logs']
+        else:
+            total_appeals = success_appeals = failed_appeals = 0
+
+        approved = "✅ Approved" if user[6] == 1 else "⏳ Pending"
+        banned = "🚫 Banned" if user[7] == 1 else "✅ Active"
+        text = boxed(
+            f"👤 *Profile*\n\n"
+            f"🆔 ID: `{tid}`\n"
+            f"📛 Name: {user[1] or 'Not set'}\n"
+            f"📧 Email: {user[2] or 'Not set'}\n"
+            f"📝 Reason: {user[4] or 'Not set'}\n"
+            f"⏱ Delay: {user[5] or WB_DEFAULT_DELAY}s\n"
+            f"🔑 Status: {approved}\n"
+            f"📱 Account: {banned}\n"
+            f"📊 Total Appeals: {total_appeals} (✅ {success_appeals} | ❌ {failed_appeals})\n"
+            f"🌐 Language: {user[8].upper()}",
+            "Profile"
+        )
+        await update.message.reply_text(text, parse_mode="Markdown")
+
+    async def save_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text(
+            "📝 *Please send me the text you want to save as a file.*\n"
+            "You can send multiple lines. I'll create a .txt file for you.",
+            parse_mode="Markdown"
+        )
+        context.user_data["save_text_state"] = True
 
     async def admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_user.id not in ADMIN_IDS:
@@ -1266,7 +1282,6 @@ class CommandHandlers:
         )
         await update.message.reply_text(text, parse_mode="Markdown")
 
-    # (approve, reject, whitelist, remove, backup unchanged)
     async def approve(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
@@ -1377,6 +1392,61 @@ class CallbackHandlers:
             )
             return
 
+        if data == "help":
+            help_text = boxed(
+                "📖 *Help*\n\n"
+                "Use the main menu buttons to navigate.\n"
+                "Each engine has its own features.\n"
+                "For admin commands, use /admin.\n"
+                f"Contact {ADMIN_USERNAME} for support.\n\n"
+                "📄 /savetext – Save any text as a file\n"
+                "👤 /profile – View your profile",
+                "Help"
+            )
+            await query.edit_message_text(help_text, parse_mode="Markdown", reply_markup=main_menu(user_id))
+            return
+
+        if data == "profile":
+            tid = user_id
+            user = await self.crud.wb_get_user(tid)
+            if not user:
+                await query.edit_message_text("❌ Profile not found.", reply_markup=main_menu(user_id))
+                return
+            stats = await self.crud.wb_get_stats(tid)
+            if stats:
+                total_appeals = stats['total_logs']
+                success_appeals = stats['success_logs']
+                failed_appeals = stats['failed_logs']
+            else:
+                total_appeals = success_appeals = failed_appeals = 0
+
+            approved = "✅ Approved" if user[6] == 1 else "⏳ Pending"
+            banned = "🚫 Banned" if user[7] == 1 else "✅ Active"
+            text = boxed(
+                f"👤 *Profile*\n\n"
+                f"🆔 ID: `{tid}`\n"
+                f"📛 Name: {user[1] or 'Not set'}\n"
+                f"📧 Email: {user[2] or 'Not set'}\n"
+                f"📝 Reason: {user[4] or 'Not set'}\n"
+                f"⏱ Delay: {user[5] or WB_DEFAULT_DELAY}s\n"
+                f"🔑 Status: {approved}\n"
+                f"📱 Account: {banned}\n"
+                f"📊 Total Appeals: {total_appeals} (✅ {success_appeals} | ❌ {failed_appeals})\n"
+                f"🌐 Language: {user[8].upper()}",
+                "Profile"
+            )
+            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_menu(user_id))
+            return
+
+        if data == "save_text":
+            await query.edit_message_text(
+                "📝 *Please send me the text you want to save as a file.*\n"
+                "You can send multiple lines. I'll create a .txt file for you.",
+                parse_mode="Markdown"
+            )
+            context.user_data["save_text_state"] = True
+            return
+
         if data == "request_access":
             await self.crud.add_pending(user_id, update.effective_user.username or str(user_id))
             await query.edit_message_text("✅ Request sent to admin. Please wait.")
@@ -1391,6 +1461,33 @@ class CallbackHandlers:
                     pass
             return
 
+        # HW confirmation (yes/no) via inline buttons
+        if data.startswith("hw_confirm_"):
+            action = data.split("_")[2]  # "yes" or "no"
+            hw_state = context.user_data.get("hw_state")
+            if not hw_state:
+                await query.edit_message_text("❌ Session expired. Please start over.", reply_markup=hw_main_menu())
+                return
+
+            if action == "yes":
+                platform = hw_state.get("platform")
+                mobile = hw_state.get("mobile")
+                otp = hw_state.get("otp")
+                password = hw_state.get("password")
+                invite = HOLWIN_INVITE if platform == "holwin" else REX_INVITE
+                success, resp = await self.hw.register(platform, mobile, otp, password, invite)
+                if success:
+                    await self.crud.hw_update_user(user_id, platform, mobile, password, invite)
+                    await query.edit_message_text("✅ *Registration successful!*", parse_mode="Markdown", reply_markup=hw_main_menu())
+                else:
+                    error_msg = resp.get('msg', 'Unknown error')
+                    await query.edit_message_text(f"❌ Registration failed: {error_msg}", reply_markup=hw_main_menu())
+                context.user_data.pop("hw_state", None)
+            else:
+                await query.edit_message_text("❌ Registration cancelled.", reply_markup=hw_main_menu())
+                context.user_data.pop("hw_state", None)
+            return
+
         if data.startswith("em_"):
             await self._handle_em(query, context, user_id)
         elif data.startswith("hw_"):
@@ -1400,7 +1497,7 @@ class CallbackHandlers:
         else:
             await query.edit_message_text("❌ Unknown action.")
 
-    # ---- EM ---- (unchanged except using cached stats)
+    # ---- EM ----
     async def _handle_em(self, query, context, user_id):
         data = query.data
         if data == "em_menu":
@@ -1419,9 +1516,7 @@ class CallbackHandlers:
             )
             context.user_data["em_state"] = {"waiting_for_register": True}
         elif data == "em_dashboard":
-            total, success, fail = await self.crud.em_stats()  # cached
-            # Use format_em_dashboard but we need to pass crud and em
-            # We'll build the text directly using cached stats
+            total, success, fail = await self.crud.em_stats()
             if self.em.running and self.em.total > 0:
                 elapsed = time.time() - self.em.start_time if self.em.start_time else 0
                 rate = self.em.processed / elapsed if elapsed > 0 else 0
@@ -1477,7 +1572,6 @@ class CallbackHandlers:
                 return
             await query.edit_message_text(f"🚀 Starting {count} accounts...")
             async def progress_callback(processed, success, fail, total):
-                # we can show progress by calling dashboard again
                 pass
             asyncio.create_task(self.em.run_registration(count, self.em.referral, progress_callback))
         elif data == "em_custom":
@@ -1789,7 +1883,7 @@ class CallbackHandlers:
             await query.edit_message_text("✅ Scheduler job deleted.")
             await self._handle_wb(query, context, user_id)
         elif data == "wb_stats":
-            stats = await self.crud.wb_get_stats(user_id)  # cached
+            stats = await self.crud.wb_get_stats(user_id)
             if not stats:
                 await query.edit_message_text("User not found.")
                 return
@@ -1866,7 +1960,6 @@ class CallbackHandlers:
         await query.edit_message_text("⏳ Sending appeals...")
         name = user[1] or "User"
         reason = user[4] or "personal communication"
-        # Send in parallel
         tasks = []
         for n in numbers:
             if n[4] == 1:
@@ -1911,7 +2004,7 @@ class CallbackHandlers:
             await self.crud.wb_update_last_appeal(phone)
         await query.edit_message_text(f"{'✅' if ok else '❌'} {phone}: {msg}", reply_markup=wb_main_menu())
 
-# ---------- Message Handlers (unchanged) ----------
+# ---------- Message Handlers ----------
 class MessageHandlers:
     def __init__(self, crud: CRUD, em: EMEngine, hw: HWEngine, wb: WBEngine):
         self.crud = crud
@@ -1923,6 +2016,11 @@ class MessageHandlers:
         user_id = update.effective_user.id
         text = update.message.text.strip()
 
+        # Check for save_text state first
+        if context.user_data.get("save_text_state"):
+            await self._handle_save_text(update, context)
+            return
+
         if "em_state" in context.user_data:
             await self._handle_em_text(update, context)
         elif "hw_state" in context.user_data:
@@ -1931,6 +2029,24 @@ class MessageHandlers:
             await self._handle_wb_text(update, context)
         else:
             await update.message.reply_text("Use the buttons or /start.")
+
+    async def _handle_save_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text
+        if not text:
+            await update.message.reply_text("❌ Please send some text.")
+            return
+
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        filename = f"saved_text_{timestamp}.txt"
+        file_content = text.encode('utf-8')
+
+        await update.message.reply_document(
+            document=io.BytesIO(file_content),
+            filename=filename,
+            caption=f"✅ Text saved as `{filename}`",
+            parse_mode="Markdown"
+        )
+        context.user_data.pop("save_text_state", None)
 
     async def _handle_em_text(self, update, context):
         state = context.user_data["em_state"]
@@ -1948,7 +2064,6 @@ class MessageHandlers:
                 context.user_data.pop("em_state")
                 await update.message.reply_text(f"🚀 Starting {count} accounts...")
                 async def progress_callback(processed, success, fail, total):
-                    # we can optionally update progress
                     pass
                 asyncio.create_task(self.em.run_registration(count, referral, progress_callback))
             except ValueError:
@@ -2120,32 +2235,20 @@ class MessageHandlers:
             context.user_data["hw_state"]["step"] = "confirm"
             platform = state.get("platform")
             invite = HOLWIN_INVITE if platform == "holwin" else REX_INVITE
-            await update.message.reply_text(
+            # Show summary with inline confirm/cancel buttons
+            summary_text = (
                 f"📋 *Summary*\n"
                 f"📱 Mobile: `{state['mobile']}`\n"
                 f"🔑 Password: `{'*'*len(pwd)}`\n"
                 f"🎫 Platform: `{platform.upper()}`\n"
                 f"🎫 Invite Code: `{invite}`\n\n"
-                f"Confirm? (reply 'yes' or 'no')",
-                parse_mode="Markdown"
+                f"Confirm registration?"
             )
-        elif state.get("step") == "confirm":
-            if text.lower() in ["yes", "y"]:
-                platform = state.get("platform")
-                mobile = state["mobile"]
-                otp = state["otp"]
-                password = state["password"]
-                invite = HOLWIN_INVITE if platform == "holwin" else REX_INVITE
-                success, resp = await self.hw.register(platform, mobile, otp, password, invite)
-                if success:
-                    await self.crud.hw_update_user(user_id, platform, mobile, password, invite)
-                    await update.message.reply_text("✅ *Registration successful!*", parse_mode="Markdown")
-                else:
-                    await update.message.reply_text(f"❌ Registration failed: {resp.get('msg', 'Unknown error')}")
-                context.user_data.pop("hw_state")
-            else:
-                await update.message.reply_text("❌ Cancelled.")
-                context.user_data.pop("hw_state")
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Confirm", callback_data="hw_confirm_yes")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="hw_confirm_no")]
+            ])
+            await update.message.reply_text(summary_text, parse_mode="Markdown", reply_markup=keyboard)
         elif state.get("step") == "bet":
             try:
                 amount = float(text)
@@ -2345,6 +2448,8 @@ async def main():
 
     app.add_handler(CommandHandler("start", cmd_handlers.start))
     app.add_handler(CommandHandler("help", cmd_handlers.help))
+    app.add_handler(CommandHandler("profile", cmd_handlers.profile))
+    app.add_handler(CommandHandler("savetext", cmd_handlers.save_text))
     app.add_handler(CommandHandler("admin", cmd_handlers.admin))
     app.add_handler(CommandHandler("stats", cmd_handlers.stats_global))
     app.add_handler(CommandHandler("approve", cmd_handlers.approve))
