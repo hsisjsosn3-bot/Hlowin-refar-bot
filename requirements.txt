@@ -1,15 +1,8 @@
-# Super Bot – Core Dependencies
-python-telegram-bot==20.7
-aiosqlite==0.19.0
-aiohttp==3.9.3
-apscheduler==3.10.4
-Pillow==10.2.0
-PyPDF2==3.0.1
-moviepy==1.0.3
-qrcode==7.4.2
-openai==1.14.3
-uvloop==0.19.0
-croniter==2.0.1
-python-dotenv==1.0.1
-selenium==4.18.1          # optional – web form automation
-aiofiles==23.2.1
+python-telegram-bot>=21.0
+aiohttp>=3.9.0
+aiosqlite>=0.19.0
+apscheduler>=3.10.4
+croniter>=2.0.0
+uvloop>=0.19.0  # optional, but recommended for performance
+selenium>=4.15.0  # optional, required for web form
+twocaptcha>=1.2.0  # optional
