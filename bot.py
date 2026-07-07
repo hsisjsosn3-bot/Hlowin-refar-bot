@@ -16,7 +16,7 @@
 ║                                                                           ║
 ║         Developer: DK Sharma 🚀                                           ║
 ║         Admin: @OfficalEarningZone                                        ║
-║         Version: 10.5 – "The Professional"                                ║
+║         Version: 10.6 – "The Professional"                                ║
 ║                                                                           ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 """
@@ -1029,13 +1029,16 @@ bot = None
 
 # ---------- Inline Keyboards ----------
 def main_menu(tid: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
+    buttons = [
         [InlineKeyboardButton("🤖 EarnMigo", callback_data="em_menu")],
-        [InlineKeyboardButton("📈 Holwin/Rex", callback_data="hw_menu")],
+        [InlineKeyboardButton("🎮 Holwin/Rex", callback_data="hw_menu")],
         [InlineKeyboardButton("📱 WhatsApp Unban", callback_data="wb_menu")],
-        [InlineKeyboardButton("👤 Profile", callback_data="profile"), InlineKeyboardButton("❓ Help", callback_data="help")],
-        [InlineKeyboardButton("📄 Save Text", callback_data="save_text")]
-    ])
+        [InlineKeyboardButton("👤 Profile", callback_data="profile"), InlineKeyboardButton("📊 Dashboard", callback_data="global_dashboard")],
+        [InlineKeyboardButton("⚙️ Settings", callback_data="global_settings"), InlineKeyboardButton("❓ Help", callback_data="help")],
+    ]
+    if tid in ADMIN_IDS:
+        buttons.append([InlineKeyboardButton("👑 Admin Panel", callback_data="admin_panel")])
+    return InlineKeyboardMarkup(buttons)
 
 def em_main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
@@ -1050,7 +1053,7 @@ def em_main_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🔁 Referral List", callback_data="em_referrals")],
         [InlineKeyboardButton("📤 Upload Emails", callback_data="em_upload")],
         [InlineKeyboardButton("⏰ Schedule", callback_data="em_schedule")],
-        [InlineKeyboardButton("🔙 Home", callback_data="home")]
+        [InlineKeyboardButton("⬅️ Back", callback_data="em_back"), InlineKeyboardButton("🏠 Home", callback_data="home")]
     ])
 
 def em_settings_menu() -> InlineKeyboardMarkup:
@@ -1102,7 +1105,7 @@ def hw_main_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🎮 Games", callback_data="hw_games")],
         [InlineKeyboardButton("🏆 Leaderboard", callback_data="hw_leaderboard")],
         [InlineKeyboardButton("⚙️ Settings", callback_data="hw_settings")],
-        [InlineKeyboardButton("🔙 Home", callback_data="home")]
+        [InlineKeyboardButton("⬅️ Back", callback_data="hw_back"), InlineKeyboardButton("🏠 Home", callback_data="home")]
     ])
 
 def hw_games_menu() -> InlineKeyboardMarkup:
@@ -1130,7 +1133,7 @@ def wb_main_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("⏰ Scheduler", callback_data="wb_scheduler")],
         [InlineKeyboardButton("📊 Dashboard", callback_data="wb_stats")],
         [InlineKeyboardButton("⚙️ Settings", callback_data="wb_settings")],
-        [InlineKeyboardButton("🔙 Home", callback_data="home")]
+        [InlineKeyboardButton("⬅️ Back", callback_data="wb_back"), InlineKeyboardButton("🏠 Home", callback_data="home")]
     ])
 
 def wb_settings_menu() -> InlineKeyboardMarkup:
@@ -1191,22 +1194,26 @@ class CommandHandlers:
             "Choose an engine from the buttons below.\n"
             "Each engine provides specialized automation.\n\n"
             "🤖 *EarnMigo* – Bulk account registration\n"
-            "📈 *Holwin/Rex* – Referral & gaming platform\n"
+            "🎮 *Holwin/Rex* – Referral & gaming platform\n"
             "📱 *WhatsApp Unban* – Automated ban appeals\n"
-            "📄 *Save Text* – Save any text as a file",
-            "MegaBot v10.5"
+            "📄 *Save Text* – Save any text as a file\n\n"
+            "Use the buttons to navigate.",
+            "MegaBot v10.6"
         )
         await update.message.reply_text(welcome, parse_mode="Markdown", reply_markup=main_menu(tid))
 
     async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_text = boxed(
-            "📖 *Help*\n\n"
-            "Use the main menu buttons to navigate.\n"
-            "Each engine has its own features.\n"
+            "📖 *Help Center*\n\n"
+            "🤖 **EarnMigo** – Bulk register accounts with referral rotation.\n"
+            "🎮 **Holwin/Rex** – Register, play games, earn daily bonus.\n"
+            "📱 **WhatsApp Unban** – Automate ban appeals via email/web.\n"
+            "📄 **Save Text** – Save any text as a .txt file.\n\n"
+            "👤 **Profile** – View your stats and settings.\n"
+            "📊 **Dashboard** – Global statistics.\n"
+            "⚙️ **Settings** – Adjust bot preferences.\n\n"
             "For admin commands, use /admin.\n"
-            f"Contact {ADMIN_USERNAME} for support.\n\n"
-            "📄 /savetext – Save any text as a file\n"
-            "👤 /profile – View your profile",
+            f"Contact {ADMIN_USERNAME} for support.",
             "Help"
         )
         await update.message.reply_text(help_text, parse_mode="Markdown")
@@ -1256,6 +1263,7 @@ class CommandHandlers:
             return
         text = boxed(
             "👑 *Admin Panel*\n\n"
+            "Use the buttons below or commands:\n"
             "/approve <user_id> – approve user\n"
             "/reject <user_id> – reject user\n"
             "/whitelist – list whitelisted users\n"
@@ -1264,7 +1272,14 @@ class CommandHandlers:
             "/backup – backup databases",
             "Admin"
         )
-        await update.message.reply_text(text, parse_mode="Markdown")
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 Global Stats", callback_data="admin_stats")],
+            [InlineKeyboardButton("📋 Whitelist", callback_data="admin_whitelist")],
+            [InlineKeyboardButton("⏳ Pending", callback_data="admin_pending")],
+            [InlineKeyboardButton("💾 Backup", callback_data="admin_backup")],
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_back")]
+        ])
+        await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
     async def stats_global(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_user.id not in ADMIN_IDS:
@@ -1386,6 +1401,7 @@ class CallbackHandlers:
         data = query.data
         user_id = update.effective_user.id
 
+        # Global navigation
         if data == "home":
             await query.edit_message_text(
                 "🏠 *Main Menu*", parse_mode="Markdown", reply_markup=main_menu(user_id)
@@ -1394,25 +1410,27 @@ class CallbackHandlers:
 
         if data == "help":
             help_text = boxed(
-                "📖 *Help*\n\n"
-                "Use the main menu buttons to navigate.\n"
-                "Each engine has its own features.\n"
+                "📖 *Help Center*\n\n"
+                "🤖 **EarnMigo** – Bulk register accounts with referral rotation.\n"
+                "🎮 **Holwin/Rex** – Register, play games, earn daily bonus.\n"
+                "📱 **WhatsApp Unban** – Automate ban appeals via email/web.\n"
+                "📄 **Save Text** – Save any text as a .txt file.\n\n"
+                "👤 **Profile** – View your stats and settings.\n"
+                "📊 **Dashboard** – Global statistics.\n"
+                "⚙️ **Settings** – Adjust bot preferences.\n\n"
                 "For admin commands, use /admin.\n"
-                f"Contact {ADMIN_USERNAME} for support.\n\n"
-                "📄 /savetext – Save any text as a file\n"
-                "👤 /profile – View your profile",
+                f"Contact {ADMIN_USERNAME} for support.",
                 "Help"
             )
             await query.edit_message_text(help_text, parse_mode="Markdown", reply_markup=main_menu(user_id))
             return
 
         if data == "profile":
-            tid = user_id
-            user = await self.crud.wb_get_user(tid)
+            user = await self.crud.wb_get_user(user_id)
             if not user:
                 await query.edit_message_text("❌ Profile not found.", reply_markup=main_menu(user_id))
                 return
-            stats = await self.crud.wb_get_stats(tid)
+            stats = await self.crud.wb_get_stats(user_id)
             if stats:
                 total_appeals = stats['total_logs']
                 success_appeals = stats['success_logs']
@@ -1424,7 +1442,7 @@ class CallbackHandlers:
             banned = "🚫 Banned" if user[7] == 1 else "✅ Active"
             text = boxed(
                 f"👤 *Profile*\n\n"
-                f"🆔 ID: `{tid}`\n"
+                f"🆔 ID: `{user_id}`\n"
                 f"📛 Name: {user[1] or 'Not set'}\n"
                 f"📧 Email: {user[2] or 'Not set'}\n"
                 f"📝 Reason: {user[4] or 'Not set'}\n"
@@ -1435,7 +1453,13 @@ class CallbackHandlers:
                 f"🌐 Language: {user[8].upper()}",
                 "Profile"
             )
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_menu(user_id))
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📧 Edit Email", callback_data="wb_set_email")],
+                [InlineKeyboardButton("🔑 Edit Password", callback_data="wb_set_pass")],
+                [InlineKeyboardButton("📝 Edit Reason", callback_data="wb_set_reason")],
+                [InlineKeyboardButton("🔙 Back", callback_data="home")]
+            ])
+            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
             return
 
         if data == "save_text":
@@ -1447,18 +1471,110 @@ class CallbackHandlers:
             context.user_data["save_text_state"] = True
             return
 
-        if data == "request_access":
-            await self.crud.add_pending(user_id, update.effective_user.username or str(user_id))
-            await query.edit_message_text("✅ Request sent to admin. Please wait.")
-            for admin in ADMIN_IDS:
-                try:
-                    await context.bot.send_message(
-                        admin,
-                        f"📩 New permission request from @{update.effective_user.username or user_id} (ID: {user_id}).\n"
-                        f"Use /approve {user_id} or /reject {user_id}."
-                    )
-                except:
-                    pass
+        if data == "global_dashboard":
+            em_total, em_success, em_fail = await self.crud.em_stats()
+            hw_users = await self.crud.db.fetch_one("SELECT COUNT(*) FROM hw_users")
+            wb_users = await self.crud.db.fetch_one("SELECT COUNT(*) FROM wb_users")
+            text = boxed(
+                f"📊 *Global Dashboard*\n\n"
+                f"🤖 EarnMigo: Total {em_total}, ✅ Success {em_success}, ❌ Fail {em_fail}\n"
+                f"🎮 Holwin/Rex: {hw_users[0] if hw_users else 0} users\n"
+                f"📱 WhatsApp Unban: {wb_users[0] if wb_users else 0} users",
+                "Dashboard"
+            )
+            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_menu(user_id))
+            return
+
+        if data == "global_settings":
+            text = boxed(
+                "⚙️ *Global Settings*\n\n"
+                "Currently, each engine has its own settings.\n"
+                "Please use the engine-specific settings menu.\n\n"
+                "🤖 EarnMigo: Settings button in its menu.\n"
+                "🎮 Holwin/Rex: Settings button in its menu.\n"
+                "📱 WhatsApp Unban: Settings button in its menu.",
+                "Settings"
+            )
+            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_menu(user_id))
+            return
+
+        if data == "admin_panel":
+            if user_id not in ADMIN_IDS:
+                await query.edit_message_text("⛔ Admin only.")
+                return
+            text = boxed(
+                "👑 *Admin Panel*\n\n"
+                "Use the buttons below or commands:\n"
+                "/approve <user_id> – approve user\n"
+                "/reject <user_id> – reject user\n"
+                "/whitelist – list whitelisted users\n"
+                "/remove <user_id> – remove from whitelist\n"
+                "/stats – global stats\n"
+                "/backup – backup databases",
+                "Admin"
+            )
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📊 Global Stats", callback_data="admin_stats")],
+                [InlineKeyboardButton("📋 Whitelist", callback_data="admin_whitelist")],
+                [InlineKeyboardButton("⏳ Pending", callback_data="admin_pending")],
+                [InlineKeyboardButton("💾 Backup", callback_data="admin_backup")],
+                [InlineKeyboardButton("🔙 Back", callback_data="home")]
+            ])
+            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
+            return
+
+        # Admin callbacks
+        if data == "admin_stats":
+            if user_id not in ADMIN_IDS:
+                await query.edit_message_text("⛔ Admin only.")
+                return
+            em_total, em_success, em_fail = await self.crud.em_stats()
+            hw_users = await self.crud.db.fetch_one("SELECT COUNT(*) FROM hw_users")
+            wb_users = await self.crud.db.fetch_one("SELECT COUNT(*) FROM wb_users")
+            text = boxed(
+                f"📊 *Global Stats*\n\n"
+                f"EarnMigo: Total {em_total}, Success {em_success}, Fail {em_fail}\n"
+                f"Holwin/Rex: {hw_users[0] if hw_users else 0} users\n"
+                f"WhatsApp Unban: {wb_users[0] if wb_users else 0} users",
+                "Stats"
+            )
+            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_panel")]]))
+            return
+
+        if data == "admin_whitelist":
+            if user_id not in ADMIN_IDS:
+                await query.edit_message_text("⛔ Admin only.")
+                return
+            whitelist = await self.crud.get_whitelist()
+            if not whitelist:
+                text = "Whitelist is empty."
+            else:
+                text = "📋 Whitelisted users:\n" + "\n".join([str(uid) for uid in whitelist])
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_panel")]]))
+            return
+
+        if data == "admin_pending":
+            if user_id not in ADMIN_IDS:
+                await query.edit_message_text("⛔ Admin only.")
+                return
+            pending = await self.crud.get_pending()
+            if not pending:
+                text = "No pending requests."
+            else:
+                text = "⏳ Pending requests:\n" + "\n".join([f"User {row[0]} (@{row[1]})" for row in pending])
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_panel")]]))
+            return
+
+        if data == "admin_backup":
+            if user_id not in ADMIN_IDS:
+                await query.edit_message_text("⛔ Admin only.")
+                return
+            try:
+                backup_path = f"backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.db"
+                shutil.copyfile("mega_bot.db", backup_path)
+                await query.edit_message_text(f"✅ Backup created: {backup_path}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_panel")]]))
+            except Exception as e:
+                await query.edit_message_text(f"❌ Backup failed: {e}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_panel")]]))
             return
 
         # HW confirmation (yes/no) via inline buttons
@@ -1486,6 +1602,20 @@ class CallbackHandlers:
             else:
                 await query.edit_message_text("❌ Registration cancelled.", reply_markup=hw_main_menu())
                 context.user_data.pop("hw_state", None)
+            return
+
+        if data == "request_access":
+            await self.crud.add_pending(user_id, update.effective_user.username or str(user_id))
+            await query.edit_message_text("✅ Request sent to admin. Please wait.")
+            for admin in ADMIN_IDS:
+                try:
+                    await context.bot.send_message(
+                        admin,
+                        f"📩 New permission request from @{update.effective_user.username or user_id} (ID: {user_id}).\n"
+                        f"Use /approve {user_id} or /reject {user_id}."
+                    )
+                except:
+                    pass
             return
 
         if data.startswith("em_"):
@@ -1681,7 +1811,7 @@ class CallbackHandlers:
         data = query.data
         if data == "hw_menu":
             await query.edit_message_text(
-                "📈 *Holwin/Rex Engine*\n\n"
+                "🎮 *Holwin/Rex Engine*\n\n"
                 "Register on these platforms using your invite codes.",
                 parse_mode="Markdown",
                 reply_markup=hw_main_menu()
@@ -1704,7 +1834,7 @@ class CallbackHandlers:
                 parse_mode="Markdown"
             )
         elif data == "hw_back":
-            await query.edit_message_text("📈 *Holwin/Rex*", reply_markup=hw_main_menu())
+            await query.edit_message_text("🎮 *Holwin/Rex*", reply_markup=hw_main_menu())
         elif data == "hw_balance":
             user = await self.crud.hw_get_user(user_id)
             if user and user[5]:
@@ -2235,7 +2365,6 @@ class MessageHandlers:
             context.user_data["hw_state"]["step"] = "confirm"
             platform = state.get("platform")
             invite = HOLWIN_INVITE if platform == "holwin" else REX_INVITE
-            # Show summary with inline confirm/cancel buttons
             summary_text = (
                 f"📋 *Summary*\n"
                 f"📱 Mobile: `{state['mobile']}`\n"
