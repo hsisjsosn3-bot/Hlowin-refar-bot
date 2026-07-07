@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 ╔═══════════════════════════════════════════════════════════════════════════════╗
-║                                                                               ║
 ║              ██████╗ ███████╗██╗   ██╗██╗██╗     ██╗   ██╗██╗███████╗        ║
 ║              ██╔══██╗██╔════╝╚██╗ ██╔╝██║██║     ██║   ██║██║██╔════╝        ║
 ║              ██║  ██║█████╗   ╚████╔╝ ██║██║     ██║   ██║██║███████╗        ║
@@ -16,7 +15,7 @@
 ║                                                                               ║
 ║         Developer: DK Sharma 🚀                                               ║
 ║         Admin: @OfficalEarningZone                                            ║
-║         Version: 15.0 – "Gift & Permission"                                  ║
+║         Version: 16.0 – "Bug-Free & Production"                              ║
 ║                                                                               ║
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 """
@@ -98,6 +97,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
+from telegram.error import BadRequest
 
 # ---------- Optional high-performance modules ----------
 try:
@@ -1552,6 +1552,17 @@ class FileTools:
             zf.extractall(extract_to)
         return extract_to
 
+# ---------- Helper for safe editing ----------
+async def safe_edit(query, text, reply_markup=None, parse_mode=None):
+    try:
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            # ignore
+            pass
+        else:
+            raise
+
 # ---------- Main Bot ----------
 class MegaBot:
     def __init__(self):
@@ -1676,13 +1687,17 @@ class MegaBot:
                 [InlineKeyboardButton("🏠 Home", callback_data="home")]
             ])
             if update.callback_query:
-                await update.callback_query.edit_message_text(msg, reply_markup=keyboard)
+                await safe_edit(update.callback_query, msg, reply_markup=keyboard)
             else:
-                await update.message.reply_text(msg, reply_markup=keyboard)
+                if update.message:
+                    await update.message.reply_text(msg, reply_markup=keyboard)
+                # else cannot reply
         return has
 
     # ---------- Gift Code Commands ----------
     async def gift_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         args = context.args
         if not args:
             await update.message.reply_text("Usage: /gift <code>")
@@ -1693,6 +1708,8 @@ class MegaBot:
         await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
 
     async def gen_gift_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -1717,6 +1734,8 @@ class MegaBot:
 
     # ---------- Navigation ----------
     async def start_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         context.user_data["mode"] = "home"
         user = update.effective_user
         await self._ensure_user(user.id)
@@ -1792,6 +1811,8 @@ class MegaBot:
         if not await self.check_permission(update):
             return
         query = update.callback_query
+        if not query:
+            return
         menus = {
             "ai": ("🤖 AI Tools", [
                 ["💬 AI Chat", "ai_chat"],
@@ -1830,74 +1851,84 @@ class MegaBot:
             ]),
         }
         if category not in menus:
-            await query.edit_message_text("❌ Category not found.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
+            await safe_edit(query, "❌ Category not found.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
             return
         title, buttons = menus[category]
         keyboard = []
         for row in buttons:
             keyboard.append([InlineKeyboardButton(row[0], callback_data=row[1])])
         keyboard.append([InlineKeyboardButton("⬅ Back", callback_data="home")])
-        await query.edit_message_text(f"{title}\n\nChoose a tool:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await safe_edit(query, f"{title}\n\nChoose a tool:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     # ---------- Tool Actions ----------
     async def ai_tool_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, action: str):
         if not await self.check_permission(update):
             return
         query = update.callback_query
+        if not query:
+            return
         if action == "ai_chat":
-            await query.edit_message_text("💬 Send a message to chat with AI.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "💬 Send a message to chat with AI.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["ai_mode"] = "chat"
         elif action == "ai_summarize":
-            await query.edit_message_text("📝 Send text to summarize.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "📝 Send text to summarize.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["ai_mode"] = "summarize"
         elif action == "ai_grammar":
-            await query.edit_message_text("✍️ Send text to fix grammar.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "✍️ Send text to fix grammar.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["ai_mode"] = "grammar"
         else:
-            await query.edit_message_text("⏳ Tool coming soon.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="home")]]))
+            await safe_edit(query, "⏳ Tool coming soon.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="home")]]))
 
     async def image_tool_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, action: str):
         if not await self.check_permission(update):
             return
         query = update.callback_query
+        if not query:
+            return
         if action == "img_resize":
-            await query.edit_message_text("📐 Send a photo and specify width,height in caption (e.g., 300,400)", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "📐 Send a photo and specify width,height in caption (e.g., 300,400)", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["img_mode"] = "resize"
         elif action == "img_compress":
-            await query.edit_message_text("🗜️ Send a photo to compress.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "🗜️ Send a photo to compress.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["img_mode"] = "compress"
         elif action == "img_blur":
-            await query.edit_message_text("🎨 Send a photo to blur.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "🎨 Send a photo to blur.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["img_mode"] = "blur"
         elif action == "img_rotate":
-            await query.edit_message_text("🔄 Send a photo and angle in caption (e.g., 90)", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "🔄 Send a photo and angle in caption (e.g., 90)", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["img_mode"] = "rotate"
         else:
-            await query.edit_message_text("⏳ Tool coming soon.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="home")]]))
+            await safe_edit(query, "⏳ Tool coming soon.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="home")]]))
 
     async def pdf_tool_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, action: str):
         if not await self.check_permission(update):
             return
         query = update.callback_query
+        if not query:
+            return
         if action == "pdf_merge":
-            await query.edit_message_text("📚 Send multiple PDF files (as documents) to merge. Type /done when finished.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Done", callback_data="pdf_merge_done"), InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "📚 Send multiple PDF files (as documents) to merge. Type /done when finished.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Done", callback_data="pdf_merge_done"), InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["pdf_mode"] = "merge"
             context.user_data["pdf_files"] = []
         elif action == "pdf_split":
-            await query.edit_message_text("✂️ Send a PDF file and specify page numbers in caption (e.g., 1,3,5)", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "✂️ Send a PDF file and specify page numbers in caption (e.g., 1,3,5)", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["pdf_mode"] = "split"
         else:
-            await query.edit_message_text("⏳ Tool coming soon.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="home")]]))
+            await safe_edit(query, "⏳ Tool coming soon.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="home")]]))
 
     async def text_tool_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, action: str):
         if not await self.check_permission(update):
             return
         query = update.callback_query
+        if not query:
+            return
         context.user_data["txt_mode"] = action
-        await query.edit_message_text("📝 Send the text to process.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+        await safe_edit(query, "📝 Send the text to process.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
 
     # ---------- Message Handlers ----------
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         user_id = update.effective_user.id
         text = update.message.text
         mode = context.user_data.get("mode", "home")
@@ -1961,6 +1992,8 @@ class MegaBot:
             await update.message.reply_text("Use the buttons.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
 
     async def handle_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if not await self.check_permission(update):
             return
         if context.user_data.get("img_mode"):
@@ -2009,6 +2042,8 @@ class MegaBot:
         await update.message.reply_text("Image received. Use image tools.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="home")]]))
 
     async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if not await self.check_permission(update):
             return
         doc = update.message.document
@@ -2039,6 +2074,8 @@ class MegaBot:
     # ---------- Callback Router ----------
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
+        if not query:
+            return
         await query.answer()
         data = query.data
         user_id = update.effective_user.id
@@ -2046,7 +2083,7 @@ class MegaBot:
         if data == "request_access":
             username = update.effective_user.username or "Unknown"
             await self.wb_auto.wb_request_approval(user_id, username)
-            await query.edit_message_text("✅ Request sent to admin. You will be notified when approved.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
+            await safe_edit(query, "✅ Request sent to admin. You will be notified when approved.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
             for admin in ADMIN_IDS:
                 try:
                     await self.app.bot.send_message(admin, f"📨 *New Access Request*\nUser: @{username} (ID: {user_id})\nUse /pending to view.", parse_mode="Markdown")
@@ -2080,7 +2117,7 @@ class MegaBot:
             await self.settings_cmd(update, context)
             return
         if data == "premium":
-            await query.edit_message_text("💎 Premium features – coming soon.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="home")]]))
+            await safe_edit(query, "💎 Premium features – coming soon.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="home")]]))
             return
         if data == "admin_dashboard":
             await self.admin_cmd(update, context)
@@ -2102,7 +2139,7 @@ class MegaBot:
             context.user_data.pop("img_mode", None)
             context.user_data.pop("pdf_mode", None)
             context.user_data.pop("txt_mode", None)
-            await query.edit_message_text("✅ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
+            await safe_edit(query, "✅ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
             return
 
         if data.startswith("menu_"):
@@ -2126,37 +2163,41 @@ class MegaBot:
         if data == "pdf_merge_done":
             pdf_files = context.user_data.get("pdf_files", [])
             if len(pdf_files) < 2:
-                await query.edit_message_text("❌ Need at least 2 PDF files to merge.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="home")]]))
+                await safe_edit(query, "❌ Need at least 2 PDF files to merge.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="home")]]))
                 return
             result, err = await PDFTools.merge(pdf_files)
             if err:
-                await query.edit_message_text(f"❌ {err}")
+                await safe_edit(query, f"❌ {err}")
             else:
-                await query.edit_message_text("✅ Merged PDF ready.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📄 Download", callback_data="pdf_download_merge")]]))
+                await safe_edit(query, "✅ Merged PDF ready.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📄 Download", callback_data="pdf_download_merge")]]))
                 context.user_data["pdf_merge_result"] = result
             context.user_data.pop("pdf_files", None)
             context.user_data.pop("pdf_mode", None)
             return
 
-        await query.edit_message_text("❌ Unknown action.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
+        await safe_edit(query, "❌ Unknown action.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
 
-    # ---------- Engine Callbacks (FULL IMPLEMENTATION) ----------
+    # ---------- Engine Callbacks ----------
     async def show_em(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self.check_permission(update):
             return
         query = update.callback_query
+        if not query:
+            return
         text = boxed(
             "🤖 *EarnMigo Registration Engine*\n\n"
             "Bulk register accounts with referral codes.\n"
             "Configure settings and start.",
             "EarnMigo"
         )
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=self.em.em_main_menu())
+        await safe_edit(query, text, parse_mode="Markdown", reply_markup=self.em.em_main_menu())
 
     async def show_hw(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self.check_permission(update):
             return
         query = update.callback_query
+        if not query:
+            return
         user_id = update.effective_user.id
         await self.hw.hw_create_user(user_id)
         text = boxed(
@@ -2165,12 +2206,14 @@ class MegaBot:
             "Earn rewards and play games.",
             "Holwin/Rex"
         )
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=self.hw.hw_main_menu())
+        await safe_edit(query, text, parse_mode="Markdown", reply_markup=self.hw.hw_main_menu())
 
     async def show_wb(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self.check_permission(update):
             return
         query = update.callback_query
+        if not query:
+            return
         user_id = update.effective_user.id
         async with aiosqlite.connect(WB_DB_PATH) as db:
             db.row_factory = aiosqlite.Row
@@ -2182,7 +2225,7 @@ class MegaBot:
             "Add numbers, set templates, and start sending.",
             "WhatsApp Unban"
         )
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=self.wb_main_menu())
+        await safe_edit(query, text, parse_mode="Markdown", reply_markup=self.wb_main_menu())
 
     def wb_main_menu(self):
         return InlineKeyboardMarkup([
@@ -2206,76 +2249,78 @@ class MegaBot:
         if not await self.check_permission(update):
             return
         query = update.callback_query
+        if not query:
+            return
         data = query.data
         user_id = update.effective_user.id
 
         if data == "em_register":
-            await query.edit_message_text("📧 Send the number of accounts to register (e.g., 10) or upload a CSV of emails (optional).", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "📧 Send the number of accounts to register (e.g., 10) or upload a CSV of emails (optional).", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["em_state"] = "awaiting_count"
             return
 
         elif data == "em_dashboard":
             text = await self.em.em_dashboard_text(user_id)
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=self.em.em_main_menu())
+            await safe_edit(query, text, parse_mode="Markdown", reply_markup=self.em.em_main_menu())
             return
 
         elif data == "em_history":
             recent = await self.em.em_get_recent(10)
             if not recent:
-                await query.edit_message_text("📭 No history yet.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
+                await safe_edit(query, "📭 No history yet.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
                 return
             lines = ["📜 *Recent Registrations*"]
             for r in recent:
                 lines.append(f"📧 {r['email']} | Key: `{r['authorized_key'][:8]}...` | {r['created_at']}")
-            await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
+            await safe_edit(query, "\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
             return
 
         elif data == "em_settings":
-            await query.edit_message_text("⚙️ *EM Settings*", parse_mode="Markdown", reply_markup=self.em.em_settings_menu())
+            await safe_edit(query, "⚙️ *EM Settings*", parse_mode="Markdown", reply_markup=self.em.em_settings_menu())
             return
 
         elif data == "em_export":
-            await query.edit_message_text("📤 *Export Options*", parse_mode="Markdown", reply_markup=self.em.em_export_menu())
+            await safe_edit(query, "📤 *Export Options*", parse_mode="Markdown", reply_markup=self.em.em_export_menu())
             return
 
         elif data == "em_pause":
             if self.em.running:
                 self.em.paused = True
-                await query.edit_message_text("⏸️ Paused.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("▶️ Resume", callback_data="em_resume")]]))
+                await safe_edit(query, "⏸️ Paused.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("▶️ Resume", callback_data="em_resume")]]))
             else:
-                await query.edit_message_text("No active registration.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
+                await safe_edit(query, "No active registration.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
             return
 
         elif data == "em_resume":
             if self.em.running:
                 self.em.paused = False
-                await query.edit_message_text("▶️ Resumed.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏸️ Pause", callback_data="em_pause")]]))
+                await safe_edit(query, "▶️ Resumed.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏸️ Pause", callback_data="em_pause")]]))
             else:
-                await query.edit_message_text("No active registration.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
+                await safe_edit(query, "No active registration.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
             return
 
         elif data == "em_cancel":
             if self.em.running:
                 self.em.cancel = True
-                await query.edit_message_text("⏹️ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
+                await safe_edit(query, "⏹️ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
             else:
-                await query.edit_message_text("No active registration.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
+                await safe_edit(query, "No active registration.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
             return
 
         elif data == "em_quick":
-            await query.edit_message_text("🎯 *Quick Register*", parse_mode="Markdown", reply_markup=self.em.em_quick_menu())
+            await safe_edit(query, "🎯 *Quick Register*", parse_mode="Markdown", reply_markup=self.em.em_quick_menu())
             return
 
         elif data.startswith("em_q_"):
             count = int(data.split("_")[2])
             context.user_data["em_count"] = count
             context.user_data["em_referral"] = self.em.referral
-            await query.edit_message_text(f"🚀 Starting registration for {count} accounts...\nReferral: {self.em.referral}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏹️ Cancel", callback_data="em_cancel")]]))
+            await safe_edit(query, f"🚀 Starting registration for {count} accounts...\nReferral: {self.em.referral}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏹️ Cancel", callback_data="em_cancel")]]))
             asyncio.create_task(self.em.run_registration(count, self.em.referral, self.em_progress_callback, None))
             return
 
         elif data == "em_custom":
-            await query.edit_message_text("📧 Send the number of accounts to register.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "📧 Send the number of accounts to register.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["em_state"] = "awaiting_custom_count"
             return
 
@@ -2284,24 +2329,24 @@ class MegaBot:
             self.em.concurrent = EM_TURBO_CONCURRENCY if self.em.turbo_mode else EM_CONCURRENCY
             self.em.delay = EM_TURBO_DELAY if self.em.turbo_mode else EM_DELAY
             status = "✅ Turbo ON" if self.em.turbo_mode else "✅ Turbo OFF"
-            await query.edit_message_text(f"{status}\nConcurrency: {self.em.concurrent}\nDelay: {self.em.delay}s", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
+            await safe_edit(query, f"{status}\nConcurrency: {self.em.concurrent}\nDelay: {self.em.delay}s", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
             return
 
         elif data == "em_proxy":
-            await query.edit_message_text("🌐 *Proxy Manager*", parse_mode="Markdown", reply_markup=self.em.em_proxy_menu())
+            await safe_edit(query, "🌐 *Proxy Manager*", parse_mode="Markdown", reply_markup=self.em.em_proxy_menu())
             return
 
         elif data == "em_referrals":
-            await query.edit_message_text("🔁 *Referral List*\nCurrent: " + ", ".join(self.em.referral_list), parse_mode="Markdown", reply_markup=self.em.em_referral_menu())
+            await safe_edit(query, "🔁 *Referral List*\nCurrent: " + ", ".join(self.em.referral_list), parse_mode="Markdown", reply_markup=self.em.em_referral_menu())
             return
 
         elif data == "em_upload":
-            await query.edit_message_text("📤 Upload a CSV or TXT file with emails (one per line).", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "📤 Upload a CSV or TXT file with emails (one per line).", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["em_state"] = "awaiting_upload"
             return
 
         elif data == "em_schedule":
-            await query.edit_message_text("⏰ *Schedule Registration*\nSend cron expression (e.g., '0 0 * * *') and count.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "⏰ *Schedule Registration*\nSend cron expression (e.g., '0 0 * * *') and count.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["em_state"] = "awaiting_schedule"
             return
 
@@ -2310,28 +2355,28 @@ class MegaBot:
             return
 
         elif data == "em_set_ref":
-            await query.edit_message_text("📌 Send new referral code.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "📌 Send new referral code.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["em_state"] = "set_ref"
             return
 
         elif data == "em_con_inc":
             self.em.concurrent = min(1000, self.em.concurrent + 10)
-            await query.edit_message_text(f"⚡ Concurrency: {self.em.concurrent}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_settings")]]))
+            await safe_edit(query, f"⚡ Concurrency: {self.em.concurrent}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_settings")]]))
             return
 
         elif data == "em_con_dec":
             self.em.concurrent = max(10, self.em.concurrent - 10)
-            await query.edit_message_text(f"⚡ Concurrency: {self.em.concurrent}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_settings")]]))
+            await safe_edit(query, f"⚡ Concurrency: {self.em.concurrent}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_settings")]]))
             return
 
         elif data == "em_delay_inc":
             self.em.delay = round(self.em.delay + 0.01, 3)
-            await query.edit_message_text(f"⏱️ Delay: {self.em.delay}s", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_settings")]]))
+            await safe_edit(query, f"⏱️ Delay: {self.em.delay}s", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_settings")]]))
             return
 
         elif data == "em_delay_dec":
             self.em.delay = max(0, round(self.em.delay - 0.01, 3))
-            await query.edit_message_text(f"⏱️ Delay: {self.em.delay}s", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_settings")]]))
+            await safe_edit(query, f"⏱️ Delay: {self.em.delay}s", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_settings")]]))
             return
 
         elif data == "em_export_csv":
@@ -2341,90 +2386,95 @@ class MegaBot:
             writer.writerow(["Email", "Authorized Key", "Created At"])
             for r in rows:
                 writer.writerow([r["email"], r["authorized_key"], r["created_at"]])
-            await query.edit_message_text("✅ CSV ready.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📄 Download", callback_data="em_download_csv")]]))
+            await safe_edit(query, "✅ CSV ready.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📄 Download", callback_data="em_download_csv")]]))
             context.user_data["em_export_csv"] = output.getvalue()
             return
 
         elif data == "em_export_txt":
             rows = await self.em.em_get_all_success()
             lines = [f"{r['email']}:{r['authorized_key']}" for r in rows]
-            await query.edit_message_text("✅ TXT ready.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📄 Download", callback_data="em_download_txt")]]))
+            await safe_edit(query, "✅ TXT ready.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📄 Download", callback_data="em_download_txt")]]))
             context.user_data["em_export_txt"] = "\n".join(lines)
             return
 
         elif data == "em_export_json":
             rows = await self.em.em_get_all_success()
-            await query.edit_message_text("✅ JSON ready.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📄 Download", callback_data="em_download_json")]]))
+            await safe_edit(query, "✅ JSON ready.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📄 Download", callback_data="em_download_json")]]))
             context.user_data["em_export_json"] = json.dumps([dict(r) for r in rows], indent=2)
             return
 
         elif data == "em_add_proxy":
-            await query.edit_message_text("🌐 Send proxy in format: http://user:pass@host:port", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "🌐 Send proxy in format: http://user:pass@host:port", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["em_state"] = "add_proxy"
             return
 
         elif data == "em_clear_proxies":
             self.em.proxy_manager.proxies.clear()
             self.em.proxy_manager.alive.clear()
-            await query.edit_message_text("🗑️ Proxies cleared.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_proxy")]]))
+            await safe_edit(query, "🗑️ Proxies cleared.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_proxy")]]))
             return
 
         elif data == "em_show_proxies":
             proxies = self.em.proxy_manager.proxies
             if not proxies:
-                await query.edit_message_text("📭 No proxies.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_proxy")]]))
+                await safe_edit(query, "📭 No proxies.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_proxy")]]))
                 return
-            await query.edit_message_text("🌐 Proxies:\n" + "\n".join(proxies), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_proxy")]]))
+            await safe_edit(query, "🌐 Proxies:\n" + "\n".join(proxies), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_proxy")]]))
             return
 
         elif data == "em_add_ref":
-            await query.edit_message_text("🔁 Send new referral code.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "🔁 Send new referral code.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["em_state"] = "add_ref"
             return
 
         elif data == "em_clear_refs":
             self.em.referral_list = [DEFAULT_REFERRAL]
-            await query.edit_message_text("🗑️ Referrals cleared. Reset to default.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_referrals")]]))
+            await safe_edit(query, "🗑️ Referrals cleared. Reset to default.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_referrals")]]))
             return
 
         elif data == "em_show_refs":
-            await query.edit_message_text("🔁 Referrals:\n" + "\n".join(self.em.referral_list), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_referrals")]]))
+            await safe_edit(query, "🔁 Referrals:\n" + "\n".join(self.em.referral_list), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_referrals")]]))
             return
 
         elif data == "em_download_csv":
             csv_data = context.user_data.get("em_export_csv", "")
             if not csv_data:
-                await query.edit_message_text("❌ No data.")
+                await safe_edit(query, "❌ No data.")
                 return
-            await query.message.reply_document(document=io.BytesIO(csv_data.encode()), filename="em_accounts.csv", caption="✅ Export")
+            if query.message:
+                await query.message.reply_document(document=io.BytesIO(csv_data.encode()), filename="em_accounts.csv", caption="✅ Export")
             context.user_data.pop("em_export_csv", None)
             return
 
         elif data == "em_download_txt":
             txt_data = context.user_data.get("em_export_txt", "")
             if not txt_data:
-                await query.edit_message_text("❌ No data.")
+                await safe_edit(query, "❌ No data.")
                 return
-            await query.message.reply_document(document=io.BytesIO(txt_data.encode()), filename="em_accounts.txt", caption="✅ Export")
+            if query.message:
+                await query.message.reply_document(document=io.BytesIO(txt_data.encode()), filename="em_accounts.txt", caption="✅ Export")
             context.user_data.pop("em_export_txt", None)
             return
 
         elif data == "em_download_json":
             json_data = context.user_data.get("em_export_json", "")
             if not json_data:
-                await query.edit_message_text("❌ No data.")
+                await safe_edit(query, "❌ No data.")
                 return
-            await query.message.reply_document(document=io.BytesIO(json_data.encode()), filename="em_accounts.json", caption="✅ Export")
+            if query.message:
+                await query.message.reply_document(document=io.BytesIO(json_data.encode()), filename="em_accounts.json", caption="✅ Export")
             context.user_data.pop("em_export_json", None)
             return
 
         else:
-            await query.edit_message_text("❌ Unknown EM action.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
+            await safe_edit(query, "❌ Unknown EM action.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
 
     async def em_progress_callback(self, processed, success, fail, total):
         pass
 
     async def em_handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if not await self.check_permission(update):
             return
         text = update.message.text.strip()
@@ -2510,6 +2560,8 @@ class MegaBot:
         if not await self.check_permission(update):
             return
         query = update.callback_query
+        if not query:
+            return
         data = query.data
         user_id = update.effective_user.id
 
@@ -2519,12 +2571,12 @@ class MegaBot:
                 [InlineKeyboardButton("📱 Rexproearn", callback_data="hw_reg_rex")],
                 [InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]
             ])
-            await query.edit_message_text("Select platform:", reply_markup=keyboard)
+            await safe_edit(query, "Select platform:", reply_markup=keyboard)
             return
 
         elif data.startswith("hw_reg_"):
             platform = data.split("_")[2]
-            await query.edit_message_text(f"📱 Enter your mobile number for {platform} (with country code, e.g., 91XXXXXXXXXX):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, f"📱 Enter your mobile number for {platform} (with country code, e.g., 91XXXXXXXXXX):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["hw_platform"] = platform
             context.user_data["hw_state"] = "awaiting_mobile"
             return
@@ -2532,50 +2584,50 @@ class MegaBot:
         elif data == "hw_balance":
             user = await self.hw.hw_get_user(user_id)
             if not user or not user["registered"]:
-                await query.edit_message_text("❌ You are not registered.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
+                await safe_edit(query, "❌ You are not registered.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
                 return
             bal = await self.hw.hw_get_balance(user_id)
-            await query.edit_message_text(f"💰 Your balance: ₹{bal:.2f}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
+            await safe_edit(query, f"💰 Your balance: ₹{bal:.2f}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
             return
 
         elif data == "hw_history":
             user = await self.hw.hw_get_user(user_id)
             if not user or not user["registered"]:
-                await query.edit_message_text("❌ Not registered.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
+                await safe_edit(query, "❌ Not registered.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
                 return
             async with aiosqlite.connect(HW_DB_PATH) as db:
                 db.row_factory = aiosqlite.Row
                 cur = await db.execute("SELECT * FROM hw_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 10", (user_id,))
                 rows = await cur.fetchall()
             if not rows:
-                await query.edit_message_text("📭 No transactions.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
+                await safe_edit(query, "📭 No transactions.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
                 return
             lines = ["📜 *Recent Transactions*"]
             for r in rows:
                 lines.append(f"{r['type']}: {r['amount']:.2f} | {r['description']} | {r['created_at']}")
-            await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
+            await safe_edit(query, "\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
             return
 
         elif data == "hw_referral":
             user = await self.hw.hw_get_user(user_id)
             if not user or not user["registered"]:
-                await query.edit_message_text("❌ Not registered.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
+                await safe_edit(query, "❌ Not registered.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
                 return
-            await query.edit_message_text(f"🔗 Your invite code: {user['invite_code']}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
+            await safe_edit(query, f"🔗 Your invite code: {user['invite_code']}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
             return
 
         elif data == "hw_daily":
             ok, msg = await self.hw.hw_daily_bonus(user_id)
-            await query.edit_message_text(f"{'✅' if ok else '❌'} {msg}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
+            await safe_edit(query, f"{'✅' if ok else '❌'} {msg}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
             return
 
         elif data == "hw_games":
-            await query.edit_message_text("🎮 *Games*", parse_mode="Markdown", reply_markup=self.hw.hw_games_menu())
+            await safe_edit(query, "🎮 *Games*", parse_mode="Markdown", reply_markup=self.hw.hw_games_menu())
             return
 
         elif data.startswith("hw_game_"):
             game = data.split("_")[2]
-            await query.edit_message_text(f"🎮 {game.capitalize()} - Enter bet amount:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, f"🎮 {game.capitalize()} - Enter bet amount:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["hw_game"] = game
             context.user_data["hw_state"] = "awaiting_bet"
             return
@@ -2583,16 +2635,16 @@ class MegaBot:
         elif data == "hw_leaderboard":
             leaderboard = await self.hw.hw_leaderboard()
             if not leaderboard:
-                await query.edit_message_text("📭 No users.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
+                await safe_edit(query, "📭 No users.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
                 return
             lines = ["🏆 *Leaderboard*"]
             for i, row in enumerate(leaderboard, 1):
                 lines.append(f"{i}. {row['mobile']} - ₹{row['balance']:.2f}")
-            await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
+            await safe_edit(query, "\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
             return
 
         elif data == "hw_settings":
-            await query.edit_message_text("⚙️ *HW Settings* - coming soon.", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
+            await safe_edit(query, "⚙️ *HW Settings* - coming soon.", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
             return
 
         elif data == "hw_back":
@@ -2600,9 +2652,11 @@ class MegaBot:
             return
 
         else:
-            await query.edit_message_text("❌ Unknown HW action.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
+            await safe_edit(query, "❌ Unknown HW action.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="hw_dashboard")]]))
 
     async def hw_handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if not await self.check_permission(update):
             return
         text = update.message.text.strip()
@@ -2670,94 +2724,96 @@ class MegaBot:
         if not await self.check_permission(update):
             return
         query = update.callback_query
+        if not query:
+            return
         data = query.data
         user_id = update.effective_user.id
 
         if data == "wb_add":
-            await query.edit_message_text("📞 Enter phone number (with country code, e.g., +919876543210):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "📞 Enter phone number (with country code, e.g., +919876543210):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["wb_state"] = "add_number"
             return
 
         elif data == "wb_list":
             numbers = await self.wb_auto.wb_get_numbers(user_id)
             if not numbers:
-                await query.edit_message_text("📭 No numbers added.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
+                await safe_edit(query, "📭 No numbers added.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
                 return
             lines = ["📋 *Your Numbers*"]
             for n in numbers:
                 lines.append(f"📞 {n['phone']} | Appeals: {n['appeal_count']} | {'🚫 Blacklisted' if n['blacklisted'] else '✅ Active'}")
-            await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
+            await safe_edit(query, "\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
             return
 
         elif data == "wb_appeal_all":
             numbers = await self.wb_auto.wb_get_numbers(user_id)
             if not numbers:
-                await query.edit_message_text("📭 No numbers.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
+                await safe_edit(query, "📭 No numbers.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
                 return
             user = await self.wb_auto.wb_get_user(user_id)
             if not user or not user["approved"] or not user["email"]:
-                await query.edit_message_text("❌ You are not approved or email not set.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
+                await safe_edit(query, "❌ You are not approved or email not set.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
                 return
-            await query.edit_message_text("🔄 Sending appeals...", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏹️ Stop", callback_data="wb_stop_auto")]]))
+            await safe_edit(query, "🔄 Sending appeals...", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏹️ Stop", callback_data="wb_stop_auto")]]))
             for n in numbers:
                 phone = n["phone"]
                 ok, msg = await self.wb_auto.wb_send_email(user_id, phone, user["name"] or "User", user["reason"] or "personal communication", n["custom_reason"])
                 await self.wb_auto.wb_update_last_appeal(phone)
                 await self.app.bot.send_message(user_id, f"{'✅' if ok else '❌'} {phone}: {msg}")
                 await asyncio.sleep(user["delay"] if user else WB_DEFAULT_DELAY)
-            await query.edit_message_text("✅ Done.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
+            await safe_edit(query, "✅ Done.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
             return
 
         elif data == "wb_appeal_one":
-            await query.edit_message_text("📞 Enter phone number to appeal:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "📞 Enter phone number to appeal:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["wb_state"] = "appeal_one"
             return
 
         elif data == "wb_mass":
-            await query.edit_message_text("📤 Upload CSV with 'phone' column.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "📤 Upload CSV with 'phone' column.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["wb_state"] = "mass_upload"
             return
 
         elif data == "wb_auto":
             result = await self.wb_auto.start(user_id)
-            await query.edit_message_text(f"🔁 {result}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
+            await safe_edit(query, f"🔁 {result}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
             return
 
         elif data == "wb_stop_auto":
             result = await self.wb_auto.stop(user_id)
-            await query.edit_message_text(f"🛑 {result}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
+            await safe_edit(query, f"🛑 {result}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
             return
 
         elif data == "wb_webform":
-            await query.edit_message_text("🌐 Enter phone number for web form appeal:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "🌐 Enter phone number for web form appeal:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["wb_state"] = "webform"
             return
 
         elif data == "wb_templates":
             templates = await self.wb_auto.wb_get_templates(user_id, include_default=True)
             if not templates:
-                await query.edit_message_text("📭 No templates.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
+                await safe_edit(query, "📭 No templates.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
                 return
             lines = ["📝 *Templates*"]
             for t in templates:
                 lines.append(f"{t['id']}: {t['template'][:50]}...")
-            await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Template", callback_data="wb_add_template"), InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
+            await safe_edit(query, "\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Template", callback_data="wb_add_template"), InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
             return
 
         elif data == "wb_add_template":
-            await query.edit_message_text("📝 Send new template (use {number}, {name}, {reason}):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "📝 Send new template (use {number}, {name}, {reason}):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["wb_state"] = "add_template"
             return
 
         elif data == "wb_scheduler":
-            await query.edit_message_text("⏰ *Scheduler*\nSend cron expression (e.g., '0 9 * * *') or interval in minutes (e.g., '60').", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "⏰ *Scheduler*\nSend cron expression (e.g., '0 9 * * *') or interval in minutes (e.g., '60').", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["wb_state"] = "scheduler"
             return
 
         elif data == "wb_stats":
             user = await self.wb_auto.wb_get_user(user_id)
             if not user:
-                await query.edit_message_text("❌ No stats.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
+                await safe_edit(query, "❌ No stats.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
                 return
             text = boxed(
                 f"📊 *Your Stats*\n"
@@ -2767,13 +2823,13 @@ class MegaBot:
                 f"📱 Numbers: {len(await self.wb_auto.wb_get_numbers(user_id))}",
                 "WB Stats"
             )
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
+            await safe_edit(query, text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
             return
 
         elif data == "wb_settings":
             user = await self.wb_auto.wb_get_user(user_id)
             if not user:
-                await query.edit_message_text("❌ User not found.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
+                await safe_edit(query, "❌ User not found.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
                 return
             text = boxed(
                 f"📧 Email: {user['email'] or 'Not set'}\n"
@@ -2790,7 +2846,7 @@ class MegaBot:
                 [InlineKeyboardButton("📝 Set Reason", callback_data="wb_set_reason")],
                 [InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]
             ])
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
+            await safe_edit(query, text, parse_mode="Markdown", reply_markup=keyboard)
             return
 
         elif data == "wb_back":
@@ -2798,29 +2854,31 @@ class MegaBot:
             return
 
         elif data == "wb_set_email":
-            await query.edit_message_text("📧 Send your email (Gmail):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "📧 Send your email (Gmail):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["wb_state"] = "set_email"
             return
 
         elif data == "wb_set_pass":
-            await query.edit_message_text("🔑 Send your email password:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "🔑 Send your email password:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["wb_state"] = "set_pass"
             return
 
         elif data == "wb_set_delay":
-            await query.edit_message_text("⏱️ Send delay in seconds (e.g., 2):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "⏱️ Send delay in seconds (e.g., 2):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["wb_state"] = "set_delay"
             return
 
         elif data == "wb_set_reason":
-            await query.edit_message_text("📝 Send reason for appeal (e.g., 'personal communication'):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
+            await safe_edit(query, "📝 Send reason for appeal (e.g., 'personal communication'):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["wb_state"] = "set_reason"
             return
 
         else:
-            await query.edit_message_text("❌ Unknown WB action.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
+            await safe_edit(query, "❌ Unknown WB action.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_dashboard")]]))
 
     async def wb_handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if not await self.check_permission(update):
             return
         text = update.message.text.strip()
@@ -2933,6 +2991,8 @@ class MegaBot:
 
     # ---------- Admin Commands ----------
     async def admin_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
             return
@@ -2974,42 +3034,47 @@ class MegaBot:
             [InlineKeyboardButton("⬅ Back", callback_data="home")]
         ])
         if update.callback_query:
-            await update.callback_query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
+            await safe_edit(update.callback_query, text, parse_mode="Markdown", reply_markup=keyboard)
         else:
-            await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+            if update.message:
+                await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
     async def admin_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
+        if not query:
+            return
         data = query.data
         if not data.startswith("admin_"):
             return
         if update.effective_user.id not in ADMIN_IDS:
-            await query.edit_message_text("⛔ Admin only.")
+            await safe_edit(query, "⛔ Admin only.")
             return
         if data == "admin_ban" or data == "admin_unban":
-            await query.edit_message_text("Send /ban <user_id> or /unban <user_id>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="admin_dashboard")]]))
+            await safe_edit(query, "Send /ban <user_id> or /unban <user_id>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="admin_dashboard")]]))
             return
         elif data == "admin_maintenance":
             global_state.maintenance_mode = not global_state.maintenance_mode
-            await query.edit_message_text(f"🔧 Maintenance mode: {'ON' if global_state.maintenance_mode else 'OFF'}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="admin_dashboard")]]))
+            await safe_edit(query, f"🔧 Maintenance mode: {'ON' if global_state.maintenance_mode else 'OFF'}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="admin_dashboard")]]))
             return
         elif data == "admin_restart":
-            await query.edit_message_text("🔄 Restarting... (not implemented)", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="admin_dashboard")]]))
+            await safe_edit(query, "🔄 Restarting... (not implemented)", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="admin_dashboard")]]))
             return
         else:
             if data.startswith("admin_approve_"):
                 tid = int(data.split("_")[2])
                 await self.wb_auto.wb_approve_user(tid)
-                await query.edit_message_text(f"✅ User {tid} approved.")
+                await safe_edit(query, f"✅ User {tid} approved.")
                 try:
                     await context.bot.send_message(tid, "🎉 You have been approved to use the bot.")
                 except:
                     pass
                 return
-            await query.edit_message_text("Unknown admin action.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="admin_dashboard")]]))
+            await safe_edit(query, "Unknown admin action.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="admin_dashboard")]]))
 
     # ---------- Other Admin Commands ----------
     async def approve_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3030,6 +3095,8 @@ class MegaBot:
             pass
 
     async def reject_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3046,6 +3113,8 @@ class MegaBot:
         await update.message.reply_text(f"❌ User {tid} rejected.")
 
     async def whitelist_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3060,6 +3129,8 @@ class MegaBot:
         await update.message.reply_text(text)
 
     async def remove_whitelist_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3079,6 +3150,8 @@ class MegaBot:
         await update.message.reply_text(f"🗑️ User {tid} removed from whitelist.")
 
     async def stats_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3101,6 +3174,8 @@ class MegaBot:
         await update.message.reply_text(text, parse_mode="Markdown")
 
     async def backup_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3114,6 +3189,8 @@ class MegaBot:
         os.remove(backup_path)
 
     async def restore_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3134,6 +3211,8 @@ class MegaBot:
         os.remove(backup_path)
 
     async def broadcast_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3155,6 +3234,8 @@ class MegaBot:
         await update.message.reply_text(f"✅ Broadcast sent to {count} users.")
 
     async def list_users_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3168,6 +3249,8 @@ class MegaBot:
         await update.message.reply_text(text, parse_mode="Markdown")
 
     async def clear_em_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3175,6 +3258,8 @@ class MegaBot:
         await update.message.reply_text("🗑️ EarnMigo data cleared.")
 
     async def clear_hw_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3182,6 +3267,8 @@ class MegaBot:
         await update.message.reply_text("🗑️ Holwin/Rex data cleared.")
 
     async def clear_wb_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3189,6 +3276,8 @@ class MegaBot:
         await update.message.reply_text("🗑️ WhatsApp Unban data cleared.")
 
     async def pending_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3203,6 +3292,8 @@ class MegaBot:
         await update.message.reply_text("Select user to approve:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     async def export_logs_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3222,6 +3313,8 @@ class MegaBot:
         await update.message.reply_document(document=io.BytesIO(csv_data.encode()), filename=f"logs_{tid}.csv", caption="✅ Logs exported.")
 
     async def list_schedules_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3240,12 +3333,13 @@ class MegaBot:
             return
         text = "⏰ *Scheduler Jobs*\n"
         for j in jobs:
-            # FIX: avoid nested f-string to prevent syntax error
             cron_or_interval = j['cron_expr'] if j['cron_expr'] else f"every {j['interval_minutes']} min"
             text += f"ID: {j['id']} | {cron_or_interval} | Next: {j['next_run']}\n"
         await update.message.reply_text(text, parse_mode="Markdown")
 
     async def delete_schedule_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3262,6 +3356,8 @@ class MegaBot:
         await update.message.reply_text("✅ Schedule deleted.")
 
     async def ban_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3280,6 +3376,8 @@ class MegaBot:
         await update.message.reply_text(f"✅ User {tid} banned.")
 
     async def unban_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("⛔ Admin only.")
             return
@@ -3299,6 +3397,8 @@ class MegaBot:
 
     # ---------- Other Navigation Commands ----------
     async def help_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         help_text = boxed(
             "📖 *Help*\n\n"
             "Welcome to Super Bot!\n"
@@ -3319,12 +3419,16 @@ class MegaBot:
         await self.start_cmd(update, context)
 
     async def cancel_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         context.user_data.pop("em_state", None)
         context.user_data.pop("hw_state", None)
         context.user_data.pop("wb_state", None)
         await update.message.reply_text("✅ Operation cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
 
     async def request_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         user_id = update.effective_user.id
         username = update.effective_user.username or "Unknown"
         await self.wb_auto.wb_request_approval(user_id, username)
@@ -3336,6 +3440,8 @@ class MegaBot:
                 pass
 
     async def language_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         user_id = update.effective_user.id
         args = context.args
         if not args:
@@ -3349,12 +3455,16 @@ class MegaBot:
         await update.message.reply_text(f"✅ Language set to {lang}.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
 
     async def test_email_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         user_id = update.effective_user.id
         ok, msg = await self.wb_auto.wb_test_email(user_id)
         await update.message.reply_text(f"{'✅' if ok else '❌'} Email test: {msg}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
 
     # ---------- Profile & Settings ----------
     async def profile_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         user = update.effective_user
         stats = await self._get_user_stats(user.id)
         expiry = await PermissionManager.get_expiry(user.id)
@@ -3373,6 +3483,8 @@ class MegaBot:
         await update.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="home")]]))
 
     async def settings_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         user_id = update.effective_user.id
         wb_user = await self.wb_auto.wb_get_user(user_id)
         lang = wb_user["language"] if wb_user else "en"
@@ -3395,6 +3507,8 @@ class MegaBot:
 
     # ---------- Feedback ----------
     async def feedback_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         feedback = " ".join(context.args) if context.args else None
         if not feedback:
             await update.message.reply_text("📝 Send feedback: /feedback <message>")
@@ -3408,6 +3522,8 @@ class MegaBot:
 
     # ---------- AI Commands ----------
     async def ai_chat_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if not await self.check_permission(update):
             return
         text = " ".join(context.args) if context.args else None
@@ -3418,6 +3534,8 @@ class MegaBot:
         await update.message.reply_text(result, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="home")]]))
 
     async def summarize_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
         if not await self.check_permission(update):
             return
         text = " ".join(context.args) if context.args else None
