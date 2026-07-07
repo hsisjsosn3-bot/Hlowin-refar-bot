@@ -131,8 +131,8 @@ except ImportError:
     pass
 
 # ---------- Environment / Config ----------
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-ADMIN_IDS = [int(id) for id in os.getenv("ADMIN_IDS", "5888777479").split(",")]
+BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+ADMIN_IDS = [int(id) for id in os.getenv("ADMIN_IDS", "6318083968").split(",")]
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FILE = os.getenv("LOG_FILE", "megabot.log")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -1335,7 +1335,6 @@ class WBAutoEngine:
             await db.execute("DELETE FROM wb_pending WHERE user_id = ?", (tid,))
             await db.commit()
 
-    # Additional WB methods for settings, etc.
     async def wb_update_user(self, tid, field, value):
         async with aiosqlite.connect(WB_DB_PATH) as db:
             db.row_factory = aiosqlite.Row
@@ -1346,7 +1345,6 @@ class WBAutoEngine:
 class PermissionManager:
     @staticmethod
     async def has_permission(tid: int) -> bool:
-        """Check if user has active permission."""
         async with aiosqlite.connect(WB_DB_PATH) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute("SELECT expires_at FROM user_permissions WHERE tid = ?", (tid,))
@@ -1403,9 +1401,7 @@ class PermissionManager:
             expires_at = datetime.fromisoformat(row["expires_at"])
             if expires_at < datetime.utcnow():
                 return False, "❌ This code has expired."
-            # Grant permission
             await PermissionManager.grant_permission(user_id, row["duration_minutes"])
-            # Mark as used
             await db.execute(
                 "UPDATE gift_codes SET is_used = 1, used_by = ?, used_at = ? WHERE code = ?",
                 (user_id, datetime.utcnow().isoformat(), code)
@@ -1591,7 +1587,6 @@ class MegaBot:
                 id="auto_backup"
             )
 
-        # Start health-check web server
         asyncio.create_task(self._run_web_server())
 
         await self.app.initialize()
@@ -1606,7 +1601,6 @@ class MegaBot:
             await asyncio.sleep(1)
 
     async def _run_web_server(self):
-        """Run a simple HTTP server for health checks."""
         app = web.Application()
         app.router.add_get("/", self._health_check)
         runner = web.AppRunner(app)
@@ -1620,7 +1614,6 @@ class MegaBot:
 
     def _register_handlers(self):
         app = self.app
-        # Command handlers
         app.add_handler(CommandHandler("start", self.start_cmd))
         app.add_handler(CommandHandler("help", self.help_cmd))
         app.add_handler(CommandHandler("menu", self.menu_cmd))
@@ -1632,10 +1625,8 @@ class MegaBot:
         app.add_handler(CommandHandler("profile", self.profile_cmd))
         app.add_handler(CommandHandler("feedback", self.feedback_cmd))
         app.add_handler(CommandHandler("admin", self.admin_cmd))
-        # Gift code commands
         app.add_handler(CommandHandler("gift", self.gift_cmd))
         app.add_handler(CommandHandler("gen_gift", self.gen_gift_cmd))
-        # Admin commands
         app.add_handler(CommandHandler("approve", self.approve_cmd))
         app.add_handler(CommandHandler("reject", self.reject_cmd))
         app.add_handler(CommandHandler("whitelist", self.whitelist_cmd))
@@ -1654,16 +1645,12 @@ class MegaBot:
         app.add_handler(CommandHandler("delete_schedule", self.delete_schedule_cmd))
         app.add_handler(CommandHandler("ban", self.ban_cmd))
         app.add_handler(CommandHandler("unban", self.unban_cmd))
-        # AI commands
         app.add_handler(CommandHandler("ai", self.ai_chat_cmd))
         app.add_handler(CommandHandler("summarize", self.summarize_cmd))
-        # Message handlers
         app.add_handler(MessageHandler(filters.PHOTO, self.handle_image))
         app.add_handler(MessageHandler(filters.Document.ALL, self.handle_document))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text))
         app.add_handler(CallbackQueryHandler(self.handle_callback))
-
-        # Error handler
         app.add_error_handler(self.error_handler)
 
     # ---------- Permission Check ----------
@@ -1671,13 +1658,11 @@ class MegaBot:
         tid = update.effective_user.id
         if tid in ADMIN_IDS:
             return True
-        # Check if user is whitelisted (approved)
         async with aiosqlite.connect(WB_DB_PATH) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute("SELECT 1 FROM wb_whitelist WHERE user_id = ?", (tid,))
             if await cur.fetchone():
                 return True
-        # Check permission expiry
         has = await PermissionManager.has_permission(tid)
         if not has:
             msg = (
@@ -1917,7 +1902,6 @@ class MegaBot:
         text = update.message.text
         mode = context.user_data.get("mode", "home")
 
-        # AI modes (permission checked inside)
         if context.user_data.get("ai_mode"):
             if not await self.check_permission(update):
                 return
@@ -1935,7 +1919,6 @@ class MegaBot:
                 await update.message.reply_text("❌ Unknown AI mode.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
             return
 
-        # Text tools (permission checked inside)
         if context.user_data.get("txt_mode"):
             if not await self.check_permission(update):
                 return
@@ -1968,7 +1951,6 @@ class MegaBot:
                 await update.message.reply_text("❌ Unknown text tool.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
             return
 
-        # Engine text handlers
         if mode == "em":
             await self.em_handle_text(update, context)
         elif mode == "hw":
@@ -2061,12 +2043,10 @@ class MegaBot:
         data = query.data
         user_id = update.effective_user.id
 
-        # Handle access request
         if data == "request_access":
             username = update.effective_user.username or "Unknown"
             await self.wb_auto.wb_request_approval(user_id, username)
             await query.edit_message_text("✅ Request sent to admin. You will be notified when approved.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
-            # Notify admins
             for admin in ADMIN_IDS:
                 try:
                     await self.app.bot.send_message(admin, f"📨 *New Access Request*\nUser: @{username} (ID: {user_id})\nUse /pending to view.", parse_mode="Markdown")
@@ -2074,7 +2054,6 @@ class MegaBot:
                     pass
             return
 
-        # Existing engine callbacks
         if data.startswith("em_"):
             await self.em_callback(update, context)
             return
@@ -2088,7 +2067,6 @@ class MegaBot:
             await self.admin_callback(update, context)
             return
 
-        # Main navigation
         if data == "home":
             await self.start_cmd(update, context)
             return
@@ -2127,13 +2105,11 @@ class MegaBot:
             await query.edit_message_text("✅ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]]))
             return
 
-        # Tool menus
         if data.startswith("menu_"):
             category = data.split("_")[1]
             await self.show_tool_menu(update, context, category)
             return
 
-        # Tool actions
         if data.startswith("ai_"):
             await self.ai_tool_action(update, context, data)
             return
@@ -2147,7 +2123,6 @@ class MegaBot:
             await self.text_tool_action(update, context, data)
             return
 
-        # Special PDF merge done
         if data == "pdf_merge_done":
             pdf_files = context.user_data.get("pdf_files", [])
             if len(pdf_files) < 2:
@@ -2295,7 +2270,6 @@ class MegaBot:
             count = int(data.split("_")[2])
             context.user_data["em_count"] = count
             context.user_data["em_referral"] = self.em.referral
-            # Start registration
             await query.edit_message_text(f"🚀 Starting registration for {count} accounts...\nReferral: {self.em.referral}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏹️ Cancel", callback_data="em_cancel")]]))
             asyncio.create_task(self.em.run_registration(count, self.em.referral, self.em_progress_callback, None))
             return
@@ -2335,7 +2309,6 @@ class MegaBot:
             await self.show_em(update, context)
             return
 
-        # Settings callbacks
         elif data == "em_set_ref":
             await query.edit_message_text("📌 Send new referral code.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["em_state"] = "set_ref"
@@ -2385,7 +2358,6 @@ class MegaBot:
             context.user_data["em_export_json"] = json.dumps([dict(r) for r in rows], indent=2)
             return
 
-        # Proxy callbacks
         elif data == "em_add_proxy":
             await query.edit_message_text("🌐 Send proxy in format: http://user:pass@host:port", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["em_state"] = "add_proxy"
@@ -2405,7 +2377,6 @@ class MegaBot:
             await query.edit_message_text("🌐 Proxies:\n" + "\n".join(proxies), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_proxy")]]))
             return
 
-        # Referral callbacks
         elif data == "em_add_ref":
             await query.edit_message_text("🔁 Send new referral code.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data["em_state"] = "add_ref"
@@ -2420,7 +2391,6 @@ class MegaBot:
             await query.edit_message_text("🔁 Referrals:\n" + "\n".join(self.em.referral_list), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_referrals")]]))
             return
 
-        # Download handlers
         elif data == "em_download_csv":
             csv_data = context.user_data.get("em_export_csv", "")
             if not csv_data:
@@ -2452,7 +2422,6 @@ class MegaBot:
             await query.edit_message_text("❌ Unknown EM action.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="em_dashboard")]]))
 
     async def em_progress_callback(self, processed, success, fail, total):
-        # This is called during registration; we could send updates, but we'll skip for now
         pass
 
     async def em_handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2510,12 +2479,10 @@ class MegaBot:
             context.user_data.pop("em_state", None)
             return
         elif state == "awaiting_upload":
-            # Expecting a document
             await update.message.reply_text("Please upload a file.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data.pop("em_state", None)
             return
         elif state == "awaiting_schedule":
-            # parse cron and count
             parts = text.split()
             if len(parts) != 2:
                 await update.message.reply_text("❌ Usage: <cron> <count>\nExample: '0 0 * * * 100'")
@@ -2643,7 +2610,6 @@ class MegaBot:
         if state == "awaiting_mobile":
             mobile = text
             platform = context.user_data.get("hw_platform")
-            # Send OTP
             try:
                 resp = await self.hw.send_sms(platform, mobile)
                 if platform == 'holwin' and resp.get("code") == 0:
@@ -2885,7 +2851,6 @@ class MegaBot:
             return
 
         elif state == "mass_upload":
-            # Expect a document
             await update.message.reply_text("Please upload a CSV file.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
             context.user_data.pop("wb_state", None)
             return
@@ -2931,7 +2896,6 @@ class MegaBot:
             return
 
         elif state == "set_email":
-            # basic email validation
             if "@" in text:
                 await self.wb_auto.wb_update_user(user_id, "email", text)
                 await update.message.reply_text("✅ Email set.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="wb_settings")]]))
@@ -3033,7 +2997,6 @@ class MegaBot:
             await query.edit_message_text("🔄 Restarting... (not implemented)", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="admin_dashboard")]]))
             return
         else:
-            # Check for approve actions from pending list
             if data.startswith("admin_approve_"):
                 tid = int(data.split("_")[2])
                 await self.wb_auto.wb_approve_user(tid)
@@ -3277,7 +3240,9 @@ class MegaBot:
             return
         text = "⏰ *Scheduler Jobs*\n"
         for j in jobs:
-            text += f"ID: {j['id']} | {j['cron_expr'] or f'every {j['interval_minutes']} min'} | Next: {j['next_run']}\n"
+            # FIX: avoid nested f-string to prevent syntax error
+            cron_or_interval = j['cron_expr'] if j['cron_expr'] else f"every {j['interval_minutes']} min"
+            text += f"ID: {j['id']} | {cron_or_interval} | Next: {j['next_run']}\n"
         await update.message.reply_text(text, parse_mode="Markdown")
 
     async def delete_schedule_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3479,10 +3444,8 @@ class MegaBot:
 
     # ---------- Global Error Handler ----------
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Log the error and send a telegram message to notify the developer."""
         logger.error(msg="Exception while handling an update:", exc_info=context.error)
         try:
-            # Notify admin
             for admin in ADMIN_IDS:
                 await context.bot.send_message(admin, f"⚠️ *Error*\n{str(context.error)[:200]}")
         except:
