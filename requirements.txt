@@ -4,5 +4,3 @@ aiosqlite>=0.19.0
 apscheduler>=3.10.4
 croniter>=2.0.0
 uvloop>=0.19.0
-selenium>=4.15.0
-twocaptcha>=1.0.0
